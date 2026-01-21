@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Commands;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.State
 {
@@ -26,12 +27,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
         public SelectionState Selection { get; private set; }
         public DragState Drag { get; private set; }
 
+        // 命令管理器（用于撤销/重做）
+        public CommandManager CommandManager { get; private set; }
+
         private BuilderStateStore()
         {
             Canvas = new CanvasState();
             Flow = new FlowState();
             Selection = new SelectionState();
             Drag = new DragState();
+            CommandManager = new CommandManager();
         }
 
         /// <summary>
@@ -46,24 +51,52 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
         }
 
         /// <summary>
-        /// 应用操作（临时方法，后续会在 Operations 中完善）
+        /// 应用操作（支持撤销/重做）
         /// </summary>
-        public void ApplyOperation(FlowOperationRequest operation)
+        public void ApplyOperation(FlowOperationRequest operation, bool recordCommand = true)
         {
             if (Flow?.FlowVersion == null)
             {
                 return;
             }
 
-            var executor = new Core.Operations.FlowOperationExecutor();
-            Flow.FlowVersion = executor.Execute(Flow.FlowVersion, operation);
-            
-            // 通知所有监听器
-            foreach (var listener in Flow.OperationListeners)
+            if (recordCommand)
             {
-                listener(Flow.FlowVersion, operation);
+                // 创建命令并执行（支持撤销/重做）
+                var command = new FlowOperationCommand(this, operation);
+                CommandManager.Execute(command);
             }
-            
+            else
+            {
+                // 直接执行操作（不记录命令，用于撤销/重做内部调用）
+                var executor = new Core.Operations.FlowOperationExecutor();
+                Flow.FlowVersion = executor.Execute(Flow.FlowVersion, operation);
+                
+                // 通知所有监听器
+                foreach (var listener in Flow.OperationListeners)
+                {
+                    listener(Flow.FlowVersion, operation);
+                }
+                
+                OnPropertyChanged(nameof(Flow));
+            }
+        }
+
+        /// <summary>
+        /// 撤销操作
+        /// </summary>
+        public void Undo()
+        {
+            CommandManager.Undo();
+            OnPropertyChanged(nameof(Flow));
+        }
+
+        /// <summary>
+        /// 重做操作
+        /// </summary>
+        public void Redo()
+        {
+            CommandManager.Redo();
             OnPropertyChanged(nameof(Flow));
         }
 
@@ -135,7 +168,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        protected virtual void OnPropertyChanged(string propertyName)
+        public virtual void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }

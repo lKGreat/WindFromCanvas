@@ -92,7 +92,47 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
             if (_stateStore?.Flow?.FlowVersion != null)
             {
                 _currentGraph = _graphBuilder.BuildGraph(_stateStore.Flow.FlowVersion);
+                RegisterDropTargets();
                 Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 注册放置目标
+        /// </summary>
+        private void RegisterDropTargets()
+        {
+            if (_currentGraph == null) return;
+
+            // 清除现有目标
+            foreach (var target in _dragDropManager.GetDropTargets())
+            {
+                _dragDropManager.UnregisterDropTarget(target);
+            }
+
+            // 注册添加按钮作为放置目标
+            foreach (var node in _currentGraph.Nodes)
+            {
+                if (node is AddButtonNode addButton)
+                {
+                    var dropTarget = new DragDrop.DropTarget(
+                        addButton.Id,
+                        addButton.ParentStepName,
+                        addButton.StepLocationRelativeToParent,
+                        addButton.BranchIndex
+                    );
+                    _dragDropManager.RegisterDropTarget(dropTarget);
+                }
+                else if (node is BigAddButtonNode bigAddButton)
+                {
+                    var dropTarget = new DragDrop.DropTarget(
+                        bigAddButton.Id,
+                        bigAddButton.ParentStepName,
+                        bigAddButton.StepLocationRelativeToParent,
+                        bigAddButton.BranchIndex
+                    );
+                    _dragDropManager.RegisterDropTarget(dropTarget);
+                }
             }
         }
 
@@ -467,7 +507,23 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
         {
             base.OnKeyDown(e);
             
-            // 处理快捷键
+            // 处理撤销/重做
+            if (e.Control && e.KeyCode == Keys.Z)
+            {
+                _stateStore.Undo();
+                e.Handled = true;
+                Invalidate();
+                return;
+            }
+            if (e.Control && e.KeyCode == Keys.Y)
+            {
+                _stateStore.Redo();
+                e.Handled = true;
+                Invalidate();
+                return;
+            }
+            
+            // 处理其他快捷键
             var shortcutManager = new ShortcutManager(_stateStore);
             if (shortcutManager.HandleKeyPress(e.KeyData))
             {

@@ -106,6 +106,7 @@
     <Compile Include="Applications\FlowDesigner\Commands\CommandManager.cs" />
     <Compile Include="Applications\FlowDesigner\Commands\AddNodeCommand.cs" />
     <Compile Include="Applications\FlowDesigner\Commands\MoveNodeCommand.cs" />
+    <Compile Include="Applications\FlowDesigner\Commands\FlowOperationCommand.cs" />
     <Compile Include="Applications\FlowDesigner\Clipboard\FlowClipboard.cs" />
     <Compile Include="Applications\FlowDesigner\Serialization\FlowSerializer.cs" />
     <!-- Core Models -->
@@ -166,6 +167,7 @@
     <Compile Include="Applications\FlowDesigner\DragDrop\DragContext.cs" />
     <Compile Include="Applications\FlowDesigner\DragDrop\CollisionDetector.cs" />
     <Compile Include="Applications\FlowDesigner\DragDrop\DragDropManager.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\DropTarget.cs" />
     <!-- Interaction -->
     <Compile Include="Applications\FlowDesigner\Interaction\SelectionManager.cs" />
     <Compile Include="Applications\FlowDesigner\Interaction\ContextMenuManager.cs" />
