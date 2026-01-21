@@ -108,6 +108,71 @@
     <Compile Include="Applications\FlowDesigner\Commands\MoveNodeCommand.cs" />
     <Compile Include="Applications\FlowDesigner\Clipboard\FlowClipboard.cs" />
     <Compile Include="Applications\FlowDesigner\Serialization\FlowSerializer.cs" />
+    <!-- Core Models -->
+    <Compile Include="Applications\FlowDesigner\Core\Models\IStep.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\FlowAction.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\FlowTrigger.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\FlowVersion.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\Note.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\RouterBranch.cs" />
+    <!-- Core Enums -->
+    <Compile Include="Applications\FlowDesigner\Core\Enums\FlowActionType.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\FlowTriggerType.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\FlowOperationType.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\FlowVersionState.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\RouterExecutionType.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\BranchExecutionType.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Enums\StepLocationRelativeToParent.cs" />
+    <!-- Core Operations -->
+    <Compile Include="Applications\FlowDesigner\Core\Operations\IFlowOperation.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Operations\FlowOperationExecutor.cs" />
+    <!-- Core Utils -->
+    <Compile Include="Applications\FlowDesigner\Core\Utils\IdGenerator.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Utils\FlowStructureUtil.cs" />
+    <!-- State -->
+    <Compile Include="Applications\FlowDesigner\State\IBuilderState.cs" />
+    <Compile Include="Applications\FlowDesigner\State\BuilderStateStore.cs" />
+    <Compile Include="Applications\FlowDesigner\State\CanvasState.cs" />
+    <Compile Include="Applications\FlowDesigner\State\FlowState.cs" />
+    <Compile Include="Applications\FlowDesigner\State\SelectionState.cs" />
+    <Compile Include="Applications\FlowDesigner\State\DragState.cs" />
+    <!-- Canvas -->
+    <Compile Include="Applications\FlowDesigner\Canvas\FlowCanvas.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\CanvasViewport.cs" />
+    <!-- Canvas Layout -->
+    <Compile Include="Applications\FlowDesigner\Canvas\Layout\LayoutConstants.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Layout\BoundingBox.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Layout\FlowGraph.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Layout\FlowGraphBuilder.cs" />
+    <!-- Canvas Nodes -->
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\ICanvasNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\BaseCanvasNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\StepNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\AddButtonNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\BigAddButtonNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\GraphEndNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\LoopReturnNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Nodes\NoteNode.cs" />
+    <!-- Canvas Edges -->
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\ICanvasEdge.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\StraightLineEdge.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\LoopStartEdge.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\LoopReturnEdge.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\RouterStartEdge.cs" />
+    <Compile Include="Applications\FlowDesigner\Canvas\Edges\RouterEndEdge.cs" />
+    <!-- DragDrop -->
+    <Compile Include="Applications\FlowDesigner\DragDrop\IDraggable.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\IDropTarget.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\DragContext.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\CollisionDetector.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\DragDropManager.cs" />
+    <!-- Interaction -->
+    <Compile Include="Applications\FlowDesigner\Interaction\SelectionManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Interaction\ContextMenuManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Interaction\ShortcutManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Interaction\ClipboardManager.cs" />
+    <!-- Widgets -->
+    <Compile Include="Applications\FlowDesigner\Widgets\Minimap.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Events\" />
