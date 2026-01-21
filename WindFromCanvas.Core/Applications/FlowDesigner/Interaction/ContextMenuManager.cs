@@ -8,6 +8,7 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Operations;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Utils;
+using WindFromCanvas.Core.Applications.FlowDesigner.Models;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
 {
@@ -122,7 +123,178 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
 
         private void ReplaceAction()
         {
-            // TODO: 实现替换动作逻辑（需要打开动作选择器）
+            if (string.IsNullOrEmpty(_contextStepName)) return;
+            var trigger = _stateStore.Flow?.FlowVersion?.Trigger;
+            if (trigger == null) return;
+
+            var step = FlowStructureUtil.GetStep(_contextStepName, trigger);
+            if (!(step is FlowAction)) return;
+
+            // 打开动作选择对话框
+            using (var dialog = new Widgets.NodeSelectorDialog())
+            {
+                FlowNodeType? selectedNodeType = null;
+                dialog.NodeSelected += (s, nodeType) => { selectedNodeType = nodeType; };
+                
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && selectedNodeType.HasValue)
+                {
+                    // 创建新动作（根据节点类型）
+                    FlowAction newAction = null;
+                    switch (selectedNodeType.Value)
+                    {
+                        case FlowNodeType.Loop:
+                            newAction = new LoopOnItemsAction();
+                            break;
+                        case FlowNodeType.Decision:
+                            newAction = new RouterAction();
+                            break;
+                        case FlowNodeType.Process:
+                        default:
+                            // 默认创建代码动作
+                            newAction = new CodeAction();
+                            break;
+                    }
+
+                    if (newAction != null)
+                    {
+                        // 生成新名称
+                        newAction.Name = FlowStructureUtil.FindUnusedName(trigger);
+                        
+                        // 获取原动作的属性
+                        var oldAction = (FlowAction)step;
+                        newAction.DisplayName = oldAction.DisplayName;
+                        newAction.NextAction = oldAction.NextAction;
+                        
+                        // 先删除旧动作
+                        var deleteOperation = new FlowOperationRequest
+                        {
+                            Type = FlowOperationType.DELETE_ACTION,
+                            Request = new DeleteActionRequest { StepName = _contextStepName }
+                        };
+                        _stateStore.ApplyOperation(deleteOperation);
+
+                        // 找到原动作的父步骤
+                        var parentStepName = FindParentStepName(oldAction, trigger);
+                        var location = GetCurrentLocation(oldAction, trigger);
+                        int? branchIndex = null;
+                        
+                        if (location == StepLocationRelativeToParent.INSIDE_BRANCH)
+                        {
+                            branchIndex = GetBranchIndex(oldAction, trigger);
+                        }
+
+                        // 添加新动作到相同位置
+                        var addOperation = new FlowOperationRequest
+                        {
+                            Type = FlowOperationType.ADD_ACTION,
+                            Request = new AddActionRequest
+                            {
+                                Action = newAction,
+                                ParentStepName = parentStepName,
+                                StepLocationRelativeToParent = location,
+                                BranchIndex = branchIndex
+                            }
+                        };
+                        _stateStore.ApplyOperation(addOperation);
+                    }
+                }
+            }
+        }
+
+        private string FindParentStepName(FlowAction action, IStep root)
+        {
+            var allSteps = FlowStructureUtil.GetAllSteps(root);
+            
+            foreach (var step in allSteps)
+            {
+                FlowAction nextAction = null;
+                if (step is FlowAction parentAction)
+                {
+                    nextAction = parentAction.NextAction;
+                }
+                else if (step is FlowTrigger trigger)
+                {
+                    nextAction = trigger.NextAction;
+                }
+
+                if (nextAction != null && nextAction.Name == action.Name)
+                {
+                    return step.Name;
+                }
+
+                if (step is LoopOnItemsAction loop && loop.FirstLoopAction != null && loop.FirstLoopAction.Name == action.Name)
+                {
+                    return step.Name;
+                }
+
+                if (step is RouterAction router)
+                {
+                    for (int i = 0; i < router.Children.Count; i++)
+                    {
+                        if (router.Children[i] != null && router.Children[i].Name == action.Name)
+                        {
+                            return step.Name;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private StepLocationRelativeToParent GetCurrentLocation(FlowAction action, IStep root)
+        {
+            var allSteps = FlowStructureUtil.GetAllSteps(root);
+            
+            foreach (var step in allSteps)
+            {
+                if (step is LoopOnItemsAction loop && loop.FirstLoopAction != null)
+                {
+                    var childSteps = FlowStructureUtil.GetAllChildSteps(loop);
+                    if (childSteps.Any(s => s.Name == action.Name))
+                    {
+                        return StepLocationRelativeToParent.INSIDE_LOOP;
+                    }
+                }
+
+                if (step is RouterAction router)
+                {
+                    for (int i = 0; i < router.Children.Count; i++)
+                    {
+                        if (router.Children[i] != null)
+                        {
+                            var childSteps = FlowStructureUtil.GetAllChildSteps(router.Children[i]);
+                            if (childSteps.Any(s => s.Name == action.Name))
+                            {
+                                return StepLocationRelativeToParent.INSIDE_BRANCH;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return StepLocationRelativeToParent.AFTER;
+        }
+
+        private int? GetBranchIndex(FlowAction action, IStep root)
+        {
+            var allSteps = FlowStructureUtil.GetAllSteps(root);
+            
+            foreach (var step in allSteps)
+            {
+                if (step is RouterAction router)
+                {
+                    for (int i = 0; i < router.Children.Count; i++)
+                    {
+                        if (router.Children[i] != null && router.Children[i].Name == action.Name)
+                        {
+                            return i;
+                        }
+                    }
+                }
+            }
+
+            return null;
         }
 
         private void CopyAction()
