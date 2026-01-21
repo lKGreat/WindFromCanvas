@@ -32,6 +32,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         private Dictionary<string, FlowNode> _nodes = new Dictionary<string, FlowNode>();
 
         /// <summary>
+        /// 获取所有节点（用于小地图等）
+        /// </summary>
+        public IReadOnlyCollection<FlowNode> GetNodes()
+        {
+            return _nodes.Values;
+        }
+
+        /// <summary>
         /// 所有连接
         /// </summary>
         private Dictionary<string, FlowConnection> _connections = new Dictionary<string, FlowConnection>();
@@ -139,7 +147,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// <summary>
         /// 画布偏移量
         /// </summary>
-        public PointF PanOffset { get; private set; } = PointF.Empty;
+        public PointF PanOffset { get; set; } = PointF.Empty;
 
         /// <summary>
         /// 是否显示网格
@@ -836,11 +844,30 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
+        /// 是否显示小地图
+        /// </summary>
+        public bool ShowMinimap { get; set; } = false;
+
+        /// <summary>
+        /// 平移模式枚举
+        /// </summary>
+        public enum CanvasPanningMode
+        {
+            Pan,   // 选择模式
+            Grab   // 抓取模式
+        }
+
+        /// <summary>
+        /// 平移模式（grab或pan）
+        /// </summary>
+        public CanvasPanningMode PanningMode { get; set; } = CanvasPanningMode.Pan;
+
+        /// <summary>
         /// 缩放画布
         /// </summary>
         public void SetZoom(float factor, PointF? centerPoint = null)
         {
-            factor = Math.Max(0.5f, Math.Min(1.5f, factor)); // 限制在50%-150%
+            factor = Math.Max(0.5f, Math.Min(2.0f, factor)); // 限制在50%-200%（Activepieces标准）
 
             if (centerPoint.HasValue)
             {
@@ -881,6 +908,119 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 worldPoint.X * ZoomFactor + PanOffset.X,
                 worldPoint.Y * ZoomFactor + PanOffset.Y
             );
+        }
+
+        /// <summary>
+        /// 缩放画布（以鼠标为中心）
+        /// </summary>
+        public void ZoomIn(PointF? centerPoint = null)
+        {
+            var newZoom = Math.Min(2.0f, ZoomFactor + 0.1f);
+            SetZoom(newZoom, centerPoint);
+        }
+
+        /// <summary>
+        /// 缩小画布（以鼠标为中心）
+        /// </summary>
+        public void ZoomOut(PointF? centerPoint = null)
+        {
+            var newZoom = Math.Max(0.5f, ZoomFactor - 0.1f);
+            SetZoom(newZoom, centerPoint);
+        }
+
+        /// <summary>
+        /// 适应视图（Fit to View）- 自动缩放和居中显示所有节点
+        /// </summary>
+        public void FitToView()
+        {
+            if (_nodes.Count == 0) return;
+
+            // 计算所有节点的边界框
+            var minX = float.MaxValue;
+            var minY = float.MaxValue;
+            var maxX = float.MinValue;
+            var maxY = float.MinValue;
+
+            foreach (var node in _nodes.Values)
+            {
+                var bounds = node.GetBounds();
+                minX = Math.Min(minX, bounds.Left);
+                minY = Math.Min(minY, bounds.Top);
+                maxX = Math.Max(maxX, bounds.Right);
+                maxY = Math.Max(maxY, bounds.Bottom);
+            }
+
+            var graphWidth = maxX - minX;
+            var graphHeight = maxY - minY;
+
+            if (graphWidth <= 0 || graphHeight <= 0) return;
+
+            // 添加边距（100px，Activepieces标准）
+            var padding = 100f;
+            var targetWidth = this.Width - padding * 2;
+            var targetHeight = this.Height - padding * 2;
+
+            // 计算缩放比例（保持宽高比，限制在0.9-1.25之间，参考Activepieces）
+            var zoomRatio = Math.Min(
+                Math.Max(targetWidth / graphWidth, targetHeight / graphHeight),
+                1.25f
+            );
+            zoomRatio = Math.Max(zoomRatio, 0.9f);
+
+            // 设置缩放
+            ZoomFactor = zoomRatio;
+
+            // 居中显示
+            var centerX = (minX + maxX) / 2;
+            var centerY = (minY + maxY) / 2;
+            var screenCenterX = this.Width / 2;
+            var screenCenterY = this.Height / 2;
+
+            PanOffset = new PointF(
+                screenCenterX - centerX * ZoomFactor,
+                screenCenterY - centerY * ZoomFactor + padding * ZoomFactor
+            );
+
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 确保节点在视口内可见
+        /// </summary>
+        public void EnsureNodeVisible(FlowNode node)
+        {
+            if (node == null) return;
+
+            var bounds = node.GetBounds();
+            var screenBounds = new RectangleF(
+                bounds.X * ZoomFactor + PanOffset.X,
+                bounds.Y * ZoomFactor + PanOffset.Y,
+                bounds.Width * ZoomFactor,
+                bounds.Height * ZoomFactor
+            );
+
+            var viewport = new RectangleF(0, 0, this.Width, this.Height);
+            
+            // 检查节点是否在视口外
+            if (!viewport.Contains(screenBounds))
+            {
+                // 计算需要移动的距离
+                var deltaX = 0f;
+                var deltaY = 0f;
+
+                if (screenBounds.Right > viewport.Right)
+                    deltaX = viewport.Right - screenBounds.Right - bounds.Width * ZoomFactor;
+                else if (screenBounds.Left < viewport.Left)
+                    deltaX = viewport.Left - screenBounds.Left;
+
+                if (screenBounds.Bottom > viewport.Bottom)
+                    deltaY = viewport.Bottom - screenBounds.Bottom - bounds.Height * ZoomFactor;
+                else if (screenBounds.Top < viewport.Top)
+                    deltaY = viewport.Top - screenBounds.Top;
+
+                PanOffset = new PointF(PanOffset.X + deltaX, PanOffset.Y + deltaY);
+                Invalidate();
+            }
         }
 
         /// <summary>

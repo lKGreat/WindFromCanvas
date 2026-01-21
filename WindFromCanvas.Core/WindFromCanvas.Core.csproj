@@ -80,6 +80,8 @@
     <Compile Include="Applications\FlowDesigner\Widgets\FlowContextMenu.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\TooltipControl.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\ShortcutHelpDialog.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\CanvasControlPanel.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\MinimapControl.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\ShortcutManager.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\NodeAlignmentHelper.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\IconCache.cs" />
