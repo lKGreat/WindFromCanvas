@@ -1,13 +1,14 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using WindFromCanvas.Core.Applications.FlowDesigner.DragDrop;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Nodes
 {
     /// <summary>
     /// 画布节点基类
     /// </summary>
-    public abstract class BaseCanvasNode : ICanvasNode
+    public abstract class BaseCanvasNode : ICanvasNode, IDraggable
     {
         public string Id { get; protected set; }
         public PointF Position { get; set; }
@@ -15,6 +16,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Nodes
         public bool Selectable { get; set; }
         public bool Draggable { get; set; }
         public bool IsSelected { get; set; }
+        
+        // IDraggable 实现
+        public virtual string DragType => "NODE";
 
         public RectangleF Bounds => new RectangleF(Position, Size);
 

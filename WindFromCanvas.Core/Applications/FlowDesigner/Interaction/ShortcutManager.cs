@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Forms;
 using WindFromCanvas.Core.Applications.FlowDesigner.State;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Operations;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Utils;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
 {
@@ -12,11 +17,13 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
     {
         private readonly BuilderStateStore _stateStore;
         private readonly Dictionary<Keys, Action> _shortcuts;
+        private readonly ClipboardManager _clipboardManager;
 
         public ShortcutManager(BuilderStateStore stateStore)
         {
             _stateStore = stateStore;
             _shortcuts = new Dictionary<Keys, Action>();
+            _clipboardManager = new ClipboardManager();
             InitializeShortcuts();
         }
 
@@ -25,25 +32,29 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
             // Ctrl+C - 复制
             RegisterShortcut(Keys.Control | Keys.C, () =>
             {
-                // TODO: 实现复制逻辑
+                CopySelectedActions();
             });
 
             // Ctrl+V - 粘贴
             RegisterShortcut(Keys.Control | Keys.V, () =>
             {
-                // TODO: 实现粘贴逻辑
+                PasteActions();
             });
 
-            // Shift+Delete - 删除
+            // Shift+Delete 或 Delete - 删除
             RegisterShortcut(Keys.Shift | Keys.Delete, () =>
             {
-                // TODO: 实现删除逻辑
+                DeleteSelectedActions();
+            });
+            RegisterShortcut(Keys.Delete, () =>
+            {
+                DeleteSelectedActions();
             });
 
-            // Ctrl+E - 跳过
+            // Ctrl+E - 跳过/取消跳过
             RegisterShortcut(Keys.Control | Keys.E, () =>
             {
-                // TODO: 实现跳过逻辑
+                ToggleSkipSelectedActions();
             });
 
             // Ctrl+M - 小地图
@@ -81,6 +92,179 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// 复制选中的动作
+        /// </summary>
+        private void CopySelectedActions()
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Selection?.SelectedNodeIds == null || _stateStore.Selection.SelectedNodeIds.Count == 0) return;
+
+            var actions = new List<FlowAction>();
+            var trigger = _stateStore.Flow.FlowVersion.Trigger;
+
+            foreach (var nodeId in _stateStore.Selection.SelectedNodeIds)
+            {
+                var step = FlowStructureUtil.GetStep(nodeId, trigger);
+                if (step is FlowAction action)
+                {
+                    actions.Add(action);
+                }
+            }
+
+            if (actions.Count > 0)
+            {
+                _clipboardManager.CopyActions(actions);
+            }
+        }
+
+        /// <summary>
+        /// 粘贴动作
+        /// </summary>
+        private void PasteActions()
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+
+            var actions = _clipboardManager.GetActionsFromClipboard();
+            if (actions.Count == 0) return;
+
+            var trigger = _stateStore.Flow.FlowVersion.Trigger;
+            
+            // 找到最后一个选中的节点，在其后粘贴
+            string parentStepName = null;
+            if (_stateStore.Selection?.SelectedNodeIds != null && _stateStore.Selection.SelectedNodeIds.Count > 0)
+            {
+                parentStepName = _stateStore.Selection.SelectedNodeIds.Last();
+            }
+            else
+            {
+                // 如果没有选中节点，找到最后一个动作
+                var allSteps = FlowStructureUtil.GetAllSteps(trigger);
+                var lastAction = allSteps.OfType<FlowAction>().LastOrDefault();
+                if (lastAction != null)
+                {
+                    parentStepName = lastAction.Name;
+                }
+            }
+
+            if (string.IsNullOrEmpty(parentStepName))
+            {
+                // 如果没有找到父步骤，添加到触发器之后
+                if (trigger.NextAction == null)
+                {
+                    parentStepName = trigger.Name;
+                }
+                else
+                {
+                    parentStepName = trigger.NextAction.Name;
+                }
+            }
+
+            // 粘贴第一个动作
+            if (actions.Count > 0)
+            {
+                var firstAction = actions[0];
+                // 生成新名称
+                firstAction.Name = FlowStructureUtil.FindUnusedName(trigger);
+                
+                var operation = new FlowOperationRequest
+                {
+                    Type = FlowOperationType.ADD_ACTION,
+                    Request = new AddActionRequest
+                    {
+                        Action = firstAction,
+                        ParentStepName = parentStepName,
+                        StepLocationRelativeToParent = StepLocationRelativeToParent.AFTER
+                    }
+                };
+                _stateStore.ApplyOperation(operation);
+
+                // 粘贴后续动作（链式连接）
+                var currentParent = firstAction.Name;
+                for (int i = 1; i < actions.Count; i++)
+                {
+                    var action = actions[i];
+                    action.Name = FlowStructureUtil.FindUnusedName(trigger);
+                    
+                    operation = new FlowOperationRequest
+                    {
+                        Type = FlowOperationType.ADD_ACTION,
+                        Request = new AddActionRequest
+                        {
+                            Action = action,
+                            ParentStepName = currentParent,
+                            StepLocationRelativeToParent = StepLocationRelativeToParent.AFTER
+                        }
+                    };
+                    _stateStore.ApplyOperation(operation);
+                    currentParent = action.Name;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 删除选中的动作
+        /// </summary>
+        private void DeleteSelectedActions()
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Selection?.SelectedNodeIds == null || _stateStore.Selection.SelectedNodeIds.Count == 0) return;
+
+            var trigger = _stateStore.Flow.FlowVersion.Trigger;
+
+            // 从后往前删除，避免索引问题
+            var nodeIds = _stateStore.Selection.SelectedNodeIds.ToList();
+            nodeIds.Reverse();
+
+            foreach (var nodeId in nodeIds)
+            {
+                var step = FlowStructureUtil.GetStep(nodeId, trigger);
+                if (step is FlowAction) // 不能删除触发器
+                {
+                    var operation = new FlowOperationRequest
+                    {
+                        Type = FlowOperationType.DELETE_ACTION,
+                        Request = new DeleteActionRequest { StepName = nodeId }
+                    };
+                    _stateStore.ApplyOperation(operation);
+                }
+            }
+
+            // 清除选择
+            _stateStore.Selection.ClearSelection();
+        }
+
+        /// <summary>
+        /// 切换选中动作的跳过状态
+        /// </summary>
+        private void ToggleSkipSelectedActions()
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Selection?.SelectedNodeIds == null || _stateStore.Selection.SelectedNodeIds.Count == 0) return;
+
+            var trigger = _stateStore.Flow.FlowVersion.Trigger;
+
+            foreach (var nodeId in _stateStore.Selection.SelectedNodeIds)
+            {
+                var step = FlowStructureUtil.GetStep(nodeId, trigger);
+                if (step is FlowAction action)
+                {
+                    action.Skip = !action.Skip;
+                    
+                    var operation = new FlowOperationRequest
+                    {
+                        Type = FlowOperationType.UPDATE_ACTION,
+                        Request = new UpdateActionRequest
+                        {
+                            StepName = nodeId,
+                            UpdatedAction = action
+                        }
+                    };
+                    _stateStore.ApplyOperation(operation);
+                }
+            }
         }
     }
 }

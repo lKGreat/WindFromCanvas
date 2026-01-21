@@ -50,9 +50,19 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
         /// </summary>
         public void ApplyOperation(FlowOperationRequest operation)
         {
-            // TODO: 实现操作执行逻辑
-            // var executor = new FlowOperationExecutor();
-            // Flow.FlowVersion = executor.Execute(Flow.FlowVersion, operation);
+            if (Flow?.FlowVersion == null)
+            {
+                return;
+            }
+
+            var executor = new Core.Operations.FlowOperationExecutor();
+            Flow.FlowVersion = executor.Execute(Flow.FlowVersion, operation);
+            
+            // 通知所有监听器
+            foreach (var listener in Flow.OperationListeners)
+            {
+                listener(Flow.FlowVersion, operation);
+            }
             
             OnPropertyChanged(nameof(Flow));
         }

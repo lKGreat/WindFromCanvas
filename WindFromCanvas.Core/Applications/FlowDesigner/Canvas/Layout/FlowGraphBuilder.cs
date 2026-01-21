@@ -174,6 +174,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
         private FlowGraph BuildLoopChildGraph(LoopOnItemsAction loop, PointF parentOffset)
         {
             var graph = new FlowGraph();
+            string firstChildNodeId = null;
+            string childEndNodeId = null;
 
             if (loop.FirstLoopAction != null)
             {
@@ -184,6 +186,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
                 );
                 var childGraph = BuildFlowGraphRecursive(loop.FirstLoopAction, childOffset);
                 graph.Merge(childGraph);
+                
+                // 找到第一个子节点ID（应该是步骤节点）
+                firstChildNodeId = loop.FirstLoopAction.Name;
+                // 找到子图的结束节点ID
+                childEndNodeId = $"{loop.FirstLoopAction.Name}-subgraph-end";
             }
             else
             {
@@ -196,10 +203,35 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
                 bigAddButton.ParentStepName = loop.Name;
                 bigAddButton.StepLocationRelativeToParent = StepLocationRelativeToParent.INSIDE_LOOP;
                 graph.Nodes.Add(bigAddButton);
+                firstChildNodeId = bigAddButton.Id;
             }
 
-            // TODO: 添加循环边缘（LoopStartEdge, LoopReturnEdge）
-            // 这将在 Phase 2.2 中实现
+            // 添加循环开始边缘：从循环节点到第一个子节点
+            if (firstChildNodeId != null)
+            {
+                var loopStartEdge = new LoopStartEdge($"{loop.Name}-loop-start-edge")
+                {
+                    SourceId = loop.Name,
+                    TargetId = firstChildNodeId,
+                    IsLoopEmpty = loop.FirstLoopAction == null
+                };
+                graph.Edges.Add(loopStartEdge);
+            }
+
+            // 添加循环返回边缘：从子图结束返回到循环节点
+            if (childEndNodeId != null)
+            {
+                var loopReturnEdge = new LoopReturnEdge($"{loop.Name}-loop-return-edge")
+                {
+                    SourceId = childEndNodeId,
+                    TargetId = loop.Name,
+                    ParentStepName = loop.Name,
+                    IsLoopEmpty = false,
+                    DrawArrowHeadAfterEnd = true,
+                    VerticalSpaceBetweenReturnNodeStartAndEnd = LayoutConstants.VERTICAL_SPACE_BETWEEN_STEPS
+                };
+                graph.Edges.Add(loopReturnEdge);
+            }
 
             return graph;
         }
@@ -211,6 +243,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
         {
             var graph = new FlowGraph();
             var childGraphs = new List<FlowGraph>();
+            var branchStartNodeIds = new List<string>();
+            var branchEndNodeIds = new List<string>();
 
             // 为每个分支构建子图
             for (int i = 0; i < router.Children.Count; i++)
@@ -225,6 +259,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
                 {
                     var childGraph = BuildFlowGraphRecursive(child, branchOffset);
                     childGraphs.Add(childGraph);
+                    branchStartNodeIds.Add(child.Name);
+                    branchEndNodeIds.Add($"{child.Name}-subgraph-end");
                 }
                 else
                 {
@@ -237,6 +273,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
                     var emptyGraph = new FlowGraph();
                     emptyGraph.Nodes.Add(bigAddButton);
                     childGraphs.Add(emptyGraph);
+                    branchStartNodeIds.Add(bigAddButton.Id);
+                    branchEndNodeIds.Add(bigAddButton.Id); // 空分支的结束节点就是开始节点
                 }
             }
 
@@ -246,8 +284,50 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout
                 graph.Merge(childGraph);
             }
 
-            // TODO: 添加路由边缘（RouterStartEdge, RouterEndEdge）
-            // 这将在 Phase 2.3 中实现
+            // 添加路由开始边缘：从路由节点到每个分支的第一个节点
+            var branches = router.Settings?.Branches ?? new List<Core.Models.RouterBranch>();
+            for (int i = 0; i < branchStartNodeIds.Count; i++)
+            {
+                var branchStartNodeId = branchStartNodeIds[i];
+                var branch = i < branches.Count ? branches[i] : null;
+                var label = branch != null && !string.IsNullOrEmpty(branch.BranchName) 
+                    ? branch.BranchName 
+                    : $"Branch {i + 1}";
+                
+                var routerStartEdge = new RouterStartEdge($"{router.Name}-router-start-edge-{i}")
+                {
+                    SourceId = router.Name,
+                    TargetId = branchStartNodeId,
+                    IsBranchEmpty = router.Children[i] == null,
+                    Label = label,
+                    DrawHorizontalLine = true,
+                    DrawStartingVerticalLine = i == 0, // 第一个分支绘制起始垂直线
+                    BranchIndex = i
+                };
+                graph.Edges.Add(routerStartEdge);
+            }
+
+            // 添加路由结束边缘：从每个分支的结束节点到路由结束节点
+            // 路由结束节点是路由节点的 GraphEndNode
+            var routerEndNodeId = $"{router.Name}-subgraph-end";
+            
+            for (int i = 0; i < branchEndNodeIds.Count; i++)
+            {
+                var branchEndNodeId = branchEndNodeIds[i];
+                var isLastBranch = i == branchEndNodeIds.Count - 1;
+                
+                var routerEndEdge = new RouterEndEdge($"{router.Name}-router-end-edge-{i}")
+                {
+                    SourceId = branchEndNodeId,
+                    TargetId = routerEndNodeId,
+                    DrawHorizontalLine = true,
+                    DrawEndingVerticalLine = isLastBranch, // 最后一个分支绘制结束垂直线
+                    VerticalSpaceBetweenLastNodeInBranchAndEndLine = LayoutConstants.VERTICAL_SPACE_BETWEEN_STEPS,
+                    RouterOrBranchStepName = router.Name,
+                    IsNextStepEmpty = router.NextAction == null
+                };
+                graph.Edges.Add(routerEndEdge);
+            }
 
             return graph;
         }
