@@ -9,6 +9,7 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Operations;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Utils;
 using WindFromCanvas.Core.Applications.FlowDesigner.Models;
+using FlowOperationType = WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums.FlowOperationType;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
 {
@@ -49,7 +50,23 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
                 var pasteItem = new ToolStripMenuItem("粘贴");
                 pasteItem.Click += (s, e) => PasteAfter(null);
                 _contextMenu.Items.Add(pasteItem);
+                
+                var addNoteItem = new ToolStripMenuItem("添加备注");
+                addNoteItem.Click += (s, e) => AddNote();
+                _contextMenu.Items.Add(addNoteItem);
                 return;
+            }
+
+            // 检查是否是备注节点
+            var flowVersion = _stateStore.Flow?.FlowVersion;
+            if (flowVersion?.Notes != null)
+            {
+                var note = flowVersion.Notes.FirstOrDefault(n => n.Id == _contextStepName);
+                if (note != null)
+                {
+                    InitializeNoteContextMenu(note);
+                    return;
+                }
             }
 
             var trigger = _stateStore.Flow?.FlowVersion?.Trigger;
@@ -526,6 +543,133 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
                 Type = FlowOperationType.DELETE_ACTION,
                 Request = new DeleteActionRequest { StepName = _contextStepName }
             };
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 初始化备注上下文菜单
+        /// </summary>
+        private void InitializeNoteContextMenu(Core.Models.Note note)
+        {
+            // 编辑备注
+            var editItem = new ToolStripMenuItem("编辑");
+            editItem.Click += (s, e) => EditNote(note.Id);
+            _contextMenu.Items.Add(editItem);
+
+            _contextMenu.Items.Add(new ToolStripSeparator());
+
+            // 删除备注
+            var deleteItem = new ToolStripMenuItem("删除");
+            deleteItem.Click += (s, e) => DeleteNote(note.Id);
+            _contextMenu.Items.Add(deleteItem);
+        }
+
+        /// <summary>
+        /// 添加备注
+        /// </summary>
+        private void AddNote()
+        {
+            // 这个方法需要从外部传入位置，暂时使用默认位置
+            // 实际使用时应该从鼠标位置获取
+            var note = new Core.Models.Note
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = "<br>",
+                Position = new System.Drawing.PointF(100, 100),
+                Size = new System.Drawing.SizeF(200, 150),
+                Color = Models.NoteColorVariant.Blue
+            };
+
+            var operation = new FlowOperationRequest
+            {
+                Type = FlowOperationType.ADD_NOTE,
+                Request = new Core.Operations.AddNoteRequest
+                {
+                    Id = note.Id,
+                    Content = note.Content,
+                    Position = note.Position,
+                    Size = note.Size,
+                    Color = note.Color
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 编辑备注
+        /// </summary>
+        private void EditNote(string noteId)
+        {
+            var flowVersion = _stateStore.Flow?.FlowVersion;
+            if (flowVersion?.Notes == null) return;
+
+            var note = flowVersion.Notes.FirstOrDefault(n => n.Id == noteId);
+            if (note == null) return;
+
+            // 打开编辑对话框
+            using (var form = new Form
+            {
+                Text = "编辑备注",
+                Size = new System.Drawing.Size(400, 300),
+                StartPosition = FormStartPosition.CenterParent
+            })
+            {
+                var textBox = new TextBox
+                {
+                    Multiline = true,
+                    Dock = DockStyle.Fill,
+                    Text = note.Content ?? "",
+                    Font = new Font("Microsoft YaHei UI", 10),
+                    ScrollBars = ScrollBars.Vertical
+                };
+
+                var okButton = new Button
+                {
+                    Text = "确定",
+                    Dock = DockStyle.Bottom,
+                    Height = 35,
+                    DialogResult = DialogResult.OK
+                };
+
+                form.Controls.Add(textBox);
+                form.Controls.Add(okButton);
+                form.AcceptButton = okButton;
+
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    var operation = new FlowOperationRequest
+                    {
+                        Type = FlowOperationType.UPDATE_NOTE,
+                        Request = new Core.Operations.UpdateNoteRequest
+                        {
+                            Id = note.Id,
+                            Content = textBox.Text,
+                            Position = note.Position,
+                            Size = note.Size,
+                            Color = note.Color
+                        }
+                    };
+
+                    _stateStore.ApplyOperation(operation);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 删除备注
+        /// </summary>
+        private void DeleteNote(string noteId)
+        {
+            var operation = new FlowOperationRequest
+            {
+                Type = FlowOperationType.DELETE_NOTE,
+                Request = new Core.Operations.DeleteNoteRequest
+                {
+                    Id = noteId
+                }
+            };
+
             _stateStore.ApplyOperation(operation);
         }
     }

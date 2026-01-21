@@ -271,6 +271,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
             if (_stateStore.Drag.IsDragging)
             {
                 DrawDragPreview(g);
+                DrawDropTargetHighlight(g);
             }
         }
 
@@ -331,6 +332,60 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
         }
 
         /// <summary>
+        /// 绘制放置目标高亮
+        /// </summary>
+        private void DrawDropTargetHighlight(Graphics g)
+        {
+            if (!_stateStore.Drag.IsDragging || _dragDropManager == null)
+            {
+                return;
+            }
+
+            var hoveredTargetId = _stateStore.Drag.HoveredTargetId;
+            if (string.IsNullOrEmpty(hoveredTargetId) || _currentGraph == null)
+            {
+                return;
+            }
+
+            // 查找高亮的放置目标节点（AddButtonNode 或 BigAddButtonNode）
+            var targetNode = _currentGraph.Nodes.FirstOrDefault(n => n.Id == hoveredTargetId);
+            if (targetNode == null)
+            {
+                return;
+            }
+
+            // 保存变换
+            var originalTransform = g.Transform;
+            
+            // 应用视口变换
+            _viewport.ApplyTransform(g);
+
+            // 绘制高亮边框
+            var highlightBounds = new RectangleF(
+                targetNode.Bounds.X - 5f / _viewport.Zoom,
+                targetNode.Bounds.Y - 5f / _viewport.Zoom,
+                targetNode.Bounds.Width + 10f / _viewport.Zoom,
+                targetNode.Bounds.Height + 10f / _viewport.Zoom
+            );
+
+            using (var pen = new Pen(Color.FromArgb(200, 59, 130, 246), 3f / _viewport.Zoom))
+            {
+                pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                pen.DashPattern = new float[] { 8f / _viewport.Zoom, 4f / _viewport.Zoom };
+                g.DrawRectangle(pen, highlightBounds.X, highlightBounds.Y, highlightBounds.Width, highlightBounds.Height);
+            }
+
+            // 绘制半透明背景
+            using (var brush = new SolidBrush(Color.FromArgb(30, 59, 130, 246)))
+            {
+                g.FillRectangle(brush, highlightBounds);
+            }
+
+            // 恢复变换
+            g.Transform = originalTransform;
+        }
+
+        /// <summary>
         /// 获取视口边界（画布坐标）
         /// </summary>
         private RectangleF GetViewportBounds()
@@ -378,7 +433,18 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
                     var appendSelection = (Control.ModifierKeys & Keys.Shift) != 0;
                     _selectionManager.SelectNode(clickedNode, appendSelection);
                     
-                    if (clickedNode.Draggable && clickedNode is IDraggable draggable)
+                    // 检查是否是备注节点
+                    if (clickedNode is NoteNode noteNode)
+                    {
+                        // 备注节点可以拖拽移动
+                        if (noteNode.Draggable && noteNode is IDraggable draggable)
+                        {
+                            _isDragging = true;
+                            _draggedNode = clickedNode;
+                            _dragDropManager.StartDrag(draggable, canvasPoint);
+                        }
+                    }
+                    else if (clickedNode.Draggable && clickedNode is IDraggable draggable)
                     {
                         _isDragging = true;
                         _draggedNode = clickedNode;
@@ -458,6 +524,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
             else if (_isDragging)
             {
                 _isDragging = false;
+                
+                // 如果是备注节点拖拽，更新备注位置
+                if (_draggedNode is NoteNode noteNode)
+                {
+                    var canvasPoint = _viewport.ScreenToCanvas(e.Location);
+                    UpdateNotePosition(noteNode.Id, canvasPoint);
+                }
+                
                 _dragDropManager.EndDrag();
                 _draggedNode = null;
             }
@@ -523,6 +597,26 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
                 return;
             }
             
+            // 处理删除备注
+            if ((e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back) && 
+                _stateStore.Selection?.SelectedNodeIds != null)
+            {
+                var selectedNoteIds = _stateStore.Selection.SelectedNodeIds
+                    .Where(id => _currentGraph?.Nodes.FirstOrDefault(n => n.Id == id) is NoteNode)
+                    .ToList();
+                
+                if (selectedNoteIds.Count > 0)
+                {
+                    foreach (var noteId in selectedNoteIds)
+                    {
+                        DeleteNote(noteId);
+                    }
+                    e.Handled = true;
+                    Invalidate();
+                    return;
+                }
+            }
+            
             // 处理其他快捷键
             var shortcutManager = new ShortcutManager(_stateStore);
             if (shortcutManager.HandleKeyPress(e.KeyData))
@@ -532,9 +626,196 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Canvas
             }
         }
 
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            base.OnMouseDoubleClick(e);
+            
+            if (e.Button == MouseButtons.Left)
+            {
+                var canvasPoint = _viewport.ScreenToCanvas(e.Location);
+                
+                // 检查是否双击了备注节点
+                if (_currentGraph != null)
+                {
+                    var clickedNode = _currentGraph.Nodes
+                        .Where(n => n.Selectable && n.Contains(canvasPoint))
+                        .OrderByDescending(n => n.Bounds.Width * n.Bounds.Height)
+                        .FirstOrDefault();
+                    
+                    if (clickedNode is NoteNode noteNode)
+                    {
+                        // 编辑备注
+                        EditNote(noteNode.Id);
+                    }
+                    else if (clickedNode == null)
+                    {
+                        // 双击空白区域，添加备注
+                        AddNoteAtPosition(canvasPoint);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// 获取视口
         /// </summary>
         public CanvasViewport Viewport => _viewport;
+
+        /// <summary>
+        /// 添加备注
+        /// </summary>
+        public void AddNoteAtPosition(PointF position)
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+
+            var note = new Core.Models.Note
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = "<br>",
+                Position = position,
+                Size = new SizeF(200, 150),
+                Color = Models.NoteColorVariant.Blue
+            };
+
+            var operation = new FlowOperationRequest
+            {
+                Type = Core.Enums.FlowOperationType.ADD_NOTE,
+                Request = new Core.Operations.AddNoteRequest
+                {
+                    Id = note.Id,
+                    Content = note.Content,
+                    Position = note.Position,
+                    Size = note.Size,
+                    Color = note.Color
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 编辑备注
+        /// </summary>
+        public void EditNote(string noteId)
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Flow.FlowVersion.Notes == null) return;
+
+            var note = _stateStore.Flow.FlowVersion.Notes.FirstOrDefault(n => n.Id == noteId);
+            if (note == null) return;
+
+            // 打开备注编辑器
+            using (var editor = new Widgets.NoteEditor(null))
+            {
+                // 创建临时 NoteNode 用于编辑器
+                var noteNode = new NoteNode(note.Id)
+                {
+                    Content = note.Content,
+                    Color = note.Color,
+                    Position = note.Position
+                };
+                noteNode.SetSize(note.Size);
+
+                editor.Text = note.Content ?? "";
+                
+                // 显示编辑对话框（简化实现）
+                var form = new Form
+                {
+                    Text = "编辑备注",
+                    Size = new Size(400, 300),
+                    StartPosition = FormStartPosition.CenterParent
+                };
+                
+                var textBox = new TextBox
+                {
+                    Multiline = true,
+                    Dock = DockStyle.Fill,
+                    Text = note.Content ?? "",
+                    Font = new Font("Microsoft YaHei UI", 10)
+                };
+                
+                var okButton = new Button
+                {
+                    Text = "确定",
+                    Dock = DockStyle.Bottom,
+                    Height = 35,
+                    DialogResult = DialogResult.OK
+                };
+                
+                form.Controls.Add(textBox);
+                form.Controls.Add(okButton);
+                form.AcceptButton = okButton;
+
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    var operation = new FlowOperationRequest
+                    {
+                        Type = Core.Enums.FlowOperationType.UPDATE_NOTE,
+                        Request = new Core.Operations.UpdateNoteRequest
+                        {
+                            Id = note.Id,
+                            Content = textBox.Text,
+                            Position = note.Position,
+                            Size = note.Size,
+                            Color = note.Color
+                        }
+                    };
+
+                    _stateStore.ApplyOperation(operation);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 删除备注
+        /// </summary>
+        public void DeleteNote(string noteId)
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+
+            var operation = new FlowOperationRequest
+            {
+                Type = Core.Enums.FlowOperationType.DELETE_NOTE,
+                Request = new Core.Operations.DeleteNoteRequest
+                {
+                    Id = noteId
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+            
+            // 清除选择
+            if (_stateStore.Selection?.SelectedNodeIds != null)
+            {
+                _stateStore.Selection.SelectedNodeIds.Remove(noteId);
+            }
+        }
+
+        /// <summary>
+        /// 更新备注位置
+        /// </summary>
+        public void UpdateNotePosition(string noteId, PointF newPosition)
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Flow.FlowVersion.Notes == null) return;
+
+            var note = _stateStore.Flow.FlowVersion.Notes.FirstOrDefault(n => n.Id == noteId);
+            if (note == null) return;
+
+            var operation = new FlowOperationRequest
+            {
+                Type = Core.Enums.FlowOperationType.UPDATE_NOTE,
+                Request = new Core.Operations.UpdateNoteRequest
+                {
+                    Id = note.Id,
+                    Content = note.Content,
+                    Position = newPosition,
+                    Size = note.Size,
+                    Color = note.Color
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
     }
 }

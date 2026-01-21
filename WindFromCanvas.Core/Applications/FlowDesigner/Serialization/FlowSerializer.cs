@@ -54,5 +54,30 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Serialization
             var json = File.ReadAllText(filePath);
             return Deserialize(json);
         }
+
+        /// <summary>
+        /// 泛型序列化方法
+        /// </summary>
+        public string Serialize<T>(T obj) where T : class
+        {
+            using (var stream = new MemoryStream())
+            {
+                var serializer = new DataContractJsonSerializer(typeof(T));
+                serializer.WriteObject(stream, obj);
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        /// <summary>
+        /// 泛型反序列化方法
+        /// </summary>
+        public T Deserialize<T>(string json) where T : class
+        {
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            {
+                var serializer = new DataContractJsonSerializer(typeof(T));
+                return (T)serializer.ReadObject(stream);
+            }
+        }
     }
 }
