@@ -12,6 +12,7 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Clipboard;
 using WindFromCanvas.Core.Applications.FlowDesigner.Serialization;
 using WindFromCanvas.Core.Applications.FlowDesigner.Utils;
 using WindFromCanvas.Core.Applications.FlowDesigner.Validation;
+using WindFromCanvas.Core.Applications.FlowDesigner.Animation;
 using WindFromCanvas.Core.Events;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner
@@ -225,6 +226,13 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             node.DragStart += Node_DragStart;
             node.Drag += Node_Drag;
             node.DragEnd += Node_DragEnd;
+
+            // 添加淡入动画
+            if (AnimationManager.Instance.IsEnabled)
+            {
+                var fadeInAnimation = AnimationManager.Instance.CreateFadeInAnimation(0.3f);
+                AnimationManager.Instance.AddAnimation(node, fadeInAnimation);
+            }
             node.Click += Node_Click;
             node.MouseEnter += Node_MouseEnter;
             node.MouseLeave += Node_MouseLeave;
@@ -266,7 +274,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
-        /// 移除节点
+        /// 移除节点（带淡出动画）
         /// </summary>
         public void RemoveNode(FlowNode node)
         {
@@ -718,9 +726,29 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                         }
                     }
 
-                    obj.Draw(g);
+                    // 应用动画效果
+                    var node = obj as FlowNode;
+                    if (node != null)
+                    {
+                        var animations = AnimationManager.Instance.GetAnimations(node);
+                        if (animations.Count > 0)
+                        {
+                            ApplyNodeAnimations(g, node, animations);
+                        }
+                        else
+                        {
+                            obj.Draw(g);
+                        }
+                    }
+                    else
+                    {
+                        obj.Draw(g);
+                    }
                 }
             }
+
+            // 记录性能
+            PerformanceMonitor.Instance.RecordFrame();
 
             // 重置变换
             g.ResetTransform();
@@ -1683,6 +1711,89 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// 应用节点动画效果
+        /// </summary>
+        private void ApplyNodeAnimations(Graphics g, FlowNode node, List<NodeAnimation> animations)
+        {
+            float opacity = 1f;
+            float scale = 1f;
+            float rotation = 0f;
+
+            foreach (var animation in animations)
+            {
+                switch (animation.Type)
+                {
+                    case AnimationType.FadeIn:
+                    case AnimationType.FadeOut:
+                        opacity = Math.Min(opacity, animation.CurrentOpacity);
+                        break;
+                    case AnimationType.ScalePulse:
+                        scale = animation.CurrentScale;
+                        break;
+                    case AnimationType.Rotate:
+                        rotation = animation.RotationAngle;
+                        break;
+                }
+            }
+
+            // 应用变换
+            var bounds = node.GetBounds();
+            var centerX = bounds.X + bounds.Width / 2;
+            var centerY = bounds.Y + bounds.Height / 2;
+
+            g.TranslateTransform(centerX, centerY);
+            if (rotation != 0)
+            {
+                g.RotateTransform(rotation);
+            }
+            if (scale != 1f)
+            {
+                g.ScaleTransform(scale, scale);
+            }
+            g.TranslateTransform(-centerX, -centerY);
+
+            // 应用透明度（使用ColorMatrix）
+            if (opacity < 1f)
+            {
+                var colorMatrix = new System.Drawing.Imaging.ColorMatrix(new float[][]
+                {
+                    new float[] {1, 0, 0, 0, 0},
+                    new float[] {0, 1, 0, 0, 0},
+                    new float[] {0, 0, 1, 0, 0},
+                    new float[] {0, 0, 0, opacity, 0},
+                    new float[] {0, 0, 0, 0, 1}
+                });
+                var imageAttributes = new System.Drawing.Imaging.ImageAttributes();
+                imageAttributes.SetColorMatrix(colorMatrix);
+                
+                // 使用临时位图绘制
+                var tempBitmap = new Bitmap((int)(bounds.Width + 10), (int)(bounds.Height + 10));
+                using (var tempG = Graphics.FromImage(tempBitmap))
+                {
+                    tempG.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    tempG.TranslateTransform(-bounds.X + 5, -bounds.Y + 5);
+                    node.Draw(tempG);
+                }
+                var destRect = new Rectangle(
+                    (int)(bounds.X - 5), (int)(bounds.Y - 5), 
+                    (int)(bounds.Width + 10), (int)(bounds.Height + 10));
+                g.DrawImage(tempBitmap, 
+                    destRect,
+                    0, 0, tempBitmap.Width, tempBitmap.Height, 
+                    GraphicsUnit.Pixel, imageAttributes);
+                tempBitmap.Dispose();
+                imageAttributes.Dispose();
+            }
+            else
+            {
+                node.Draw(g);
+            }
+
+            // 重置变换
+            g.ResetTransform();
         }
 
         /// <summary>

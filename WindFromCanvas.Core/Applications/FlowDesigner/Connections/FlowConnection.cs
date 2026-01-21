@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using WindFromCanvas.Core.Events;
@@ -333,20 +334,46 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         }
 
         /// <summary>
-        /// 绘制循环返回线（带圆角的曲线，参考Activepieces实现）
+        /// 需要避让的节点列表（用于循环返回连接）
+        /// </summary>
+        public List<FlowNode> AvoidanceNodes { get; set; } = new List<FlowNode>();
+
+        /// <summary>
+        /// 绘制循环返回线（带圆角的曲线，参考Activepieces实现，包含避让算法）
         /// </summary>
         private void DrawLoopReturnLine(Graphics g, PointF start, PointF end, Pen pen)
         {
             // 参考Activepieces的loop-return-edge实现
-            // 使用多段圆弧和直线创建循环返回路径
+            // 使用多段圆弧和直线创建循环返回路径，自动避让中间节点
             
             var horizontalLineLength = Math.Abs(start.X - end.X) - 2 * ArcLength;
             var verticalLineLength = Math.Abs(end.Y - start.Y);
             
+            // 计算避让高度（如果有需要避让的节点）
+            float avoidanceHeight = 0f;
+            if (AvoidanceNodes != null && AvoidanceNodes.Count > 0)
+            {
+                foreach (var node in AvoidanceNodes)
+                {
+                    var bounds = node.GetBounds();
+                    // 计算节点最高点
+                    var nodeTop = bounds.Top;
+                    var currentAvoidance = start.Y - nodeTop + 20f; // 额外20px间距
+                    if (currentAvoidance > avoidanceHeight)
+                    {
+                        avoidanceHeight = currentAvoidance;
+                    }
+                }
+            }
+            
+            // 最小避让高度
+            var minAvoidanceHeight = 50f;
+            avoidanceHeight = Math.Max(avoidanceHeight, minAvoidanceHeight);
+            
             using (var path = new GraphicsPath())
             {
-                // 从起点向上
-                var lineStartY = start.Y - 7; // VERTICAL_SPACE_BETWEEN_STEP_AND_LINE
+                // 从起点向上（避让高度）
+                var lineStartY = start.Y - avoidanceHeight;
                 path.AddLine(start.X, start.Y, start.X, lineStartY);
                 
                 // 左下方圆弧

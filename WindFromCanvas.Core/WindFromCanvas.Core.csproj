@@ -92,8 +92,12 @@
     <Compile Include="Applications\FlowDesigner\Widgets\ToastNotification.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\ShortcutManager.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\RecentNodesTracker.cs" />
+    <Compile Include="Applications\FlowDesigner\Utils\PerformanceMonitor.cs" />
     <Compile Include="Applications\FlowDesigner\Templates\NodeTemplate.cs" />
     <Compile Include="Applications\FlowDesigner\Templates\TemplateManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Animation\NodeAnimation.cs" />
+    <Compile Include="Applications\FlowDesigner\Animation\AnimationManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Animation\TransitionEngine.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\NodeAlignmentHelper.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\IconCache.cs" />
     <Compile Include="Applications\FlowDesigner\Validation\FlowValidator.cs" />
