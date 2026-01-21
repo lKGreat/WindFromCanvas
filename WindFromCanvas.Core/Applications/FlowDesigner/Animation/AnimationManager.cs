@@ -94,6 +94,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
         }
 
         /// <summary>
+        /// 动画更新事件（用于触发重绘）
+        /// </summary>
+        public event EventHandler AnimationUpdated;
+
+        /// <summary>
         /// 动画定时器更新
         /// </summary>
         private void AnimationTimer_Tick(object sender, EventArgs e)
@@ -125,6 +130,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
             {
                 RemoveAnimation(target, animation);
             }
+
+            // 触发更新事件（用于重绘）
+            AnimationUpdated?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>
@@ -175,6 +183,43 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
             {
                 EasingFunction = null // 线性旋转
             };
+        }
+
+        /// <summary>
+        /// 创建连线流动动画
+        /// </summary>
+        public NodeAnimation CreateConnectionFlowAnimation()
+        {
+            return new NodeAnimation(AnimationType.ConnectionFlow, 1f)
+            {
+                EasingFunction = null // 线性循环
+            };
+        }
+
+        /// <summary>
+        /// 创建连接建立动画
+        /// </summary>
+        public NodeAnimation CreateConnectionBuildAnimation(float duration = 0.5f)
+        {
+            var animation = new NodeAnimation(AnimationType.ConnectionBuild, duration)
+            {
+                EasingFunction = NodeAnimation.EaseOutCubic
+            };
+            animation.BuildProgress = 0f;
+            return animation;
+        }
+
+        /// <summary>
+        /// 创建端口脉冲动画
+        /// </summary>
+        public NodeAnimation CreatePortPulseAnimation(float duration = 0.6f)
+        {
+            var animation = new NodeAnimation(AnimationType.PortPulse, duration)
+            {
+                EasingFunction = NodeAnimation.EaseOutCubic
+            };
+            animation.PulseRadius = 0f;
+            return animation;
         }
 
         /// <summary>

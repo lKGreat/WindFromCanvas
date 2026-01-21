@@ -35,9 +35,12 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         public bool IsLoopReturn { get; set; }
 
         /// <summary>
-        /// 连接线颜色（Activepieces标准）
+        /// 连接线颜色（从主题获取）
         /// </summary>
-        public Color LineColor { get; set; } = Color.FromArgb(148, 163, 184);
+        public Color LineColor 
+        { 
+            get => Themes.ThemeManager.Instance.CurrentTheme.ConnectionLine;
+        }
 
         /// <summary>
         /// 连接线宽度（Activepieces标准：1.5px）
@@ -60,14 +63,30 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         public bool IsDashed { get; set; } = false;
 
         /// <summary>
-        /// 悬停时的连接线颜色
+        /// 悬停时的连接线颜色（从主题获取）
         /// </summary>
-        public Color HoverLineColor { get; set; } = Color.FromArgb(59, 130, 246);
+        public Color HoverLineColor 
+        { 
+            get => Themes.ThemeManager.Instance.CurrentTheme.ConnectionHover;
+        }
 
         /// <summary>
-        /// 选中时的连接线颜色
+        /// 选中时的连接线颜色（从主题获取）
         /// </summary>
-        public Color SelectedLineColor { get; set; } = Color.FromArgb(59, 130, 246);
+        public Color SelectedLineColor 
+        { 
+            get => Themes.ThemeManager.Instance.CurrentTheme.ConnectionSelected;
+        }
+
+        /// <summary>
+        /// 是否启用连接线渐变
+        /// </summary>
+        public bool EnableGradient { get; set; } = true;
+
+        /// <summary>
+        /// 是否启用连接线阴影
+        /// </summary>
+        public bool EnableShadow { get; set; } = true;
 
         /// <summary>
         /// 是否显示添加按钮（连接线中点）
@@ -93,6 +112,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         /// 是否悬停
         /// </summary>
         public bool IsHovered { get; set; }
+
+        /// <summary>
+        /// 连线流动动画偏移（用于虚线流动效果）
+        /// </summary>
+        public float FlowAnimationOffset { get; set; }
+
+        /// <summary>
+        /// 连接建立动画进度（0-1，用于曲线生长效果）
+        /// </summary>
+        public float BuildProgress { get; set; } = 1f;
 
         public FlowConnection()
         {
@@ -122,8 +151,25 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
             var color = IsSelected ? SelectedLineColor : 
                        (IsHovered ? HoverLineColor : LineColor);
             
+            // 绘制阴影（如果启用）
+            if (EnableShadow && !IsDashed)
+            {
+                DrawConnectionShadow(g, startPoint, endPoint, color);
+            }
+            
             // 创建画笔
-            using (var pen = new Pen(color, LineWidth))
+            Pen pen;
+            if (EnableGradient && !IsDashed && !IsLoopReturn)
+            {
+                // 使用渐变画笔
+                pen = CreateGradientPen(startPoint, endPoint, color);
+            }
+            else
+            {
+                pen = new Pen(color, LineWidth);
+            }
+            
+            using (pen)
             {
                 pen.EndCap = LineCap.Round;
                 pen.StartCap = LineCap.Round;
@@ -134,15 +180,27 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
                     pen.DashStyle = DashStyle.Dash;
                     pen.DashPattern = new float[] { 4f, 4f };
                 }
+                else if (FlowAnimationOffset > 0)
+                {
+                    // 连线流动动画：虚线流动效果
+                    pen.DashStyle = DashStyle.Dash;
+                    pen.DashPattern = new float[] { 8f, 4f };
+                    pen.DashOffset = FlowAnimationOffset;
+                }
 
-                if (IsLoopReturn)
+                // 如果正在建立连接，使用生长动画
+                if (BuildProgress < 1f && !IsLoopReturn)
+                {
+                    DrawConnectionBuild(g, startPoint, endPoint, pen);
+                }
+                else if (IsLoopReturn)
                 {
                     // 循环返回连接：绘制带圆角的曲线
                     DrawLoopReturnLine(g, startPoint, endPoint, pen);
                 }
                 else
                 {
-                    // 普通连接：绘制直线（带圆角转角）
+                    // 普通连接：绘制贝塞尔曲线
                     DrawStraightLine(g, startPoint, endPoint, pen);
                 }
             }
@@ -285,7 +343,29 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         }
 
         /// <summary>
-        /// 绘制直线连接（带圆角转角）
+        /// 绘制连接建立动画（曲线从起点生长到终点）
+        /// </summary>
+        private void DrawConnectionBuild(Graphics g, PointF start, PointF end, Pen pen)
+        {
+            // 计算贝塞尔曲线控制点
+            var dx = Math.Abs(end.X - start.X);
+            var controlOffset = Math.Max(50f, dx * 0.4f);
+            var cp1 = new PointF(start.X + controlOffset, start.Y);
+            var cp2 = new PointF(end.X - controlOffset, end.Y);
+
+            // 根据 BuildProgress 计算当前终点
+            var currentEnd = GetBezierPoint(start, cp1, cp2, end, BuildProgress);
+
+            // 绘制部分曲线
+            using (var path = new GraphicsPath())
+            {
+                path.AddBezier(start, cp1, cp2, currentEnd);
+                g.DrawPath(pen, path);
+            }
+        }
+
+        /// <summary>
+        /// 绘制贝塞尔曲线连接（平滑美观的曲线）
         /// </summary>
         private void DrawStraightLine(Graphics g, PointF start, PointF end, Pen pen)
         {
@@ -296,40 +376,23 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
                 return;
             }
 
-            // 水平连接：添加圆角转角
-            var midY = (start.Y + end.Y) / 2;
-            var verticalSpace = Math.Abs(end.Y - start.Y);
-            
-            if (verticalSpace > ArcLength * 2)
+            // 使用三次贝塞尔曲线绘制平滑连接
+            using (var path = new GraphicsPath())
             {
-                // 使用圆角路径
-                using (var path = new GraphicsPath())
-                {
-                    // 从起点向下
-                    path.AddLine(start, new PointF(start.X, start.Y + ArcLength));
-                    
-                    // 圆角转角
-                    path.AddArc(start.X - ArcLength, start.Y + ArcLength - ArcLength, 
-                        ArcLength * 2, ArcLength * 2, 90, 90);
-                    
-                    // 水平线
-                    path.AddLine(new PointF(start.X + ArcLength, start.Y + ArcLength), 
-                        new PointF(end.X - ArcLength, end.Y - ArcLength));
-                    
-                    // 圆角转角
-                    path.AddArc(end.X - ArcLength, end.Y - ArcLength - ArcLength, 
-                        ArcLength * 2, ArcLength * 2, 0, 90);
-                    
-                    // 到终点
-                    path.AddLine(new PointF(end.X, end.Y - ArcLength), end);
-                    
-                    g.DrawPath(pen, path);
-                }
-            }
-            else
-            {
-                // 距离太近，直接绘制直线
-                g.DrawLine(pen, start, end);
+                // 计算控制点偏移量：基于水平距离，最小50px
+                var dx = Math.Abs(end.X - start.X);
+                var controlOffset = Math.Max(50f, dx * 0.4f);
+                
+                // 控制点1：从起点向右延伸
+                var cp1 = new PointF(start.X + controlOffset, start.Y);
+                
+                // 控制点2：从终点向左延伸
+                var cp2 = new PointF(end.X - controlOffset, end.Y);
+                
+                // 添加贝塞尔曲线
+                path.AddBezier(start, cp1, cp2, end);
+                
+                g.DrawPath(pen, path);
             }
         }
 
@@ -426,37 +489,99 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         }
 
         /// <summary>
-        /// 绘制箭头（Activepieces风格：更清晰的三角形）
+        /// 计算贝塞尔曲线在参数t处的点
+        /// </summary>
+        private PointF GetBezierPoint(PointF p0, PointF p1, PointF p2, PointF p3, float t)
+        {
+            var u = 1f - t;
+            var tt = t * t;
+            var uu = u * u;
+            var uuu = uu * u;
+            var ttt = tt * t;
+
+            var x = uuu * p0.X + 3 * uu * t * p1.X + 3 * u * tt * p2.X + ttt * p3.X;
+            var y = uuu * p0.Y + 3 * uu * t * p1.Y + 3 * u * tt * p2.Y + ttt * p3.Y;
+
+            return new PointF(x, y);
+        }
+
+        /// <summary>
+        /// 计算贝塞尔曲线在参数t处的切线方向
+        /// </summary>
+        private PointF GetBezierTangent(PointF p0, PointF p1, PointF p2, PointF p3, float t)
+        {
+            var u = 1f - t;
+            var uu = u * u;
+            var tt = t * t;
+
+            var dx = 3 * uu * (p1.X - p0.X) + 6 * u * t * (p2.X - p1.X) + 3 * tt * (p3.X - p2.X);
+            var dy = 3 * uu * (p1.Y - p0.Y) + 6 * u * t * (p2.Y - p1.Y) + 3 * tt * (p3.Y - p2.Y);
+
+            var length = (float)Math.Sqrt(dx * dx + dy * dy);
+            if (length < 0.001f) return new PointF(1, 0);
+
+            return new PointF(dx / length, dy / length);
+        }
+
+        /// <summary>
+        /// 绘制箭头（贴合贝塞尔曲线末端切线方向）
         /// </summary>
         protected void DrawArrow(Graphics g, PointF start, PointF end, Color color)
         {
-            // 计算箭头方向
-            var dx = end.X - start.X;
-            var dy = end.Y - start.Y;
-            var length = (float)Math.Sqrt(dx * dx + dy * dy);
+            // 计算箭头方向（使用贝塞尔曲线切线）
+            PointF tangent;
+            PointF arrowTip;
 
-            if (length < ArrowSize) return;
+            // 如果不是循环返回连接，使用贝塞尔曲线计算切线
+            if (!IsLoopReturn)
+            {
+                var dx = Math.Abs(end.X - start.X);
+                var controlOffset = Math.Max(50f, dx * 0.4f);
+                var cp1 = new PointF(start.X + controlOffset, start.Y);
+                var cp2 = new PointF(end.X - controlOffset, end.Y);
 
-            // 归一化方向向量
-            var nx = dx / length;
-            var ny = dy / length;
+                // 在曲线末端（t=1）计算切线
+                tangent = GetBezierTangent(start, cp1, cp2, end, 1f);
+                
+                // 计算箭头尖端位置（稍微向内，避免重叠）
+                var tipOffset = TargetNode.Width / 2 + 5;
+                arrowTip = new PointF(
+                    end.X - tangent.X * tipOffset,
+                    end.Y - tangent.Y * tipOffset
+                );
+            }
+            else
+            {
+                // 循环返回连接使用直线方向
+                var dx = end.X - start.X;
+                var dy = end.Y - start.Y;
+                var length = (float)Math.Sqrt(dx * dx + dy * dy);
 
-            // 箭头尖端位置（稍微向内，避免重叠）
-            var arrowTip = new PointF(
-                end.X - nx * (TargetNode.Width / 2 + 5),
-                end.Y - ny * (TargetNode.Height / 2 + 5)
-            );
+                if (length < ArrowSize) return;
+
+                var nx = dx / length;
+                var ny = dy / length;
+                tangent = new PointF(nx, ny);
+
+                arrowTip = new PointF(
+                    end.X - nx * (TargetNode.Width / 2 + 5),
+                    end.Y - ny * (TargetNode.Height / 2 + 5)
+                );
+            }
 
             // 箭头两边的点（Activepieces风格：更小的角度）
             var arrowAngle = 0.5f; // 箭头角度（弧度）
             var sinAngle = (float)Math.Sin(arrowAngle);
+            var perpX = -tangent.Y; // 垂直向量
+            var perpY = tangent.X;
+
             var arrowLeft = new PointF(
-                arrowTip.X - ArrowSize * nx - ArrowSize * sinAngle * ny,
-                arrowTip.Y - ArrowSize * ny + ArrowSize * sinAngle * nx
+                arrowTip.X - ArrowSize * tangent.X - ArrowSize * sinAngle * perpX,
+                arrowTip.Y - ArrowSize * tangent.Y - ArrowSize * sinAngle * perpY
             );
             var arrowRight = new PointF(
-                arrowTip.X - ArrowSize * nx + ArrowSize * sinAngle * ny,
-                arrowTip.Y - ArrowSize * ny - ArrowSize * sinAngle * nx
+                arrowTip.X - ArrowSize * tangent.X + ArrowSize * sinAngle * perpX,
+                arrowTip.Y - ArrowSize * tangent.Y + ArrowSize * sinAngle * perpY
             );
 
             // 绘制箭头（填充三角形）
@@ -482,9 +607,48 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         }
 
         /// <summary>
-        /// 检查点是否在直线附近
+        /// 检查点是否在贝塞尔曲线附近
         /// </summary>
         private bool IsPointNearLine(PointF point, PointF lineStart, PointF lineEnd, float tolerance)
+        {
+            if (IsLoopReturn)
+            {
+                // 循环返回连接使用简单的直线检测
+                return IsPointNearStraightLine(point, lineStart, lineEnd, tolerance);
+            }
+
+            // 计算贝塞尔曲线控制点
+            var dx = Math.Abs(lineEnd.X - lineStart.X);
+            var controlOffset = Math.Max(50f, dx * 0.4f);
+            var cp1 = new PointF(lineStart.X + controlOffset, lineStart.Y);
+            var cp2 = new PointF(lineEnd.X - controlOffset, lineEnd.Y);
+
+            // 在曲线上采样多个点，检查最近距离
+            float minDistanceSquared = float.MaxValue;
+            const int samples = 20; // 采样点数
+
+            for (int i = 0; i <= samples; i++)
+            {
+                var t = i / (float)samples;
+                var curvePoint = GetBezierPoint(lineStart, cp1, cp2, lineEnd, t);
+                
+                var dx2 = point.X - curvePoint.X;
+                var dy2 = point.Y - curvePoint.Y;
+                var distSq = dx2 * dx2 + dy2 * dy2;
+                
+                if (distSq < minDistanceSquared)
+                {
+                    minDistanceSquared = distSq;
+                }
+            }
+
+            return minDistanceSquared <= tolerance * tolerance;
+        }
+
+        /// <summary>
+        /// 检查点是否在直线附近（用于循环返回连接）
+        /// </summary>
+        private bool IsPointNearStraightLine(PointF point, PointF lineStart, PointF lineEnd, float tolerance)
         {
             var dx = lineEnd.X - lineStart.X;
             var dy = lineEnd.Y - lineStart.Y;
@@ -524,6 +688,68 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
             var maxY = Math.Max(startPoint.Y, endPoint.Y);
 
             return new RectangleF(minX, minY, maxX - minX, maxY - minY);
+        }
+
+        /// <summary>
+        /// 绘制连接线阴影
+        /// </summary>
+        private void DrawConnectionShadow(Graphics g, PointF start, PointF end, Color baseColor)
+        {
+            var shadowColor = Themes.ThemeManager.Instance.CurrentTheme.ConnectionShadow;
+            var shadowOffset = 2f;
+            
+            using (var shadowPath = new GraphicsPath())
+            {
+                // 计算贝塞尔曲线控制点
+                var dx = Math.Abs(end.X - start.X);
+                var controlOffset = Math.Max(50f, dx * 0.4f);
+                var cp1 = new PointF(start.X + controlOffset, start.Y);
+                var cp2 = new PointF(end.X - controlOffset, end.Y);
+                
+                shadowPath.AddBezier(
+                    new PointF(start.X + shadowOffset, start.Y + shadowOffset),
+                    new PointF(cp1.X + shadowOffset, cp1.Y + shadowOffset),
+                    new PointF(cp2.X + shadowOffset, cp2.Y + shadowOffset),
+                    new PointF(end.X + shadowOffset, end.Y + shadowOffset)
+                );
+                
+                using (var shadowPen = new Pen(shadowColor, LineWidth + 2f))
+                {
+                    shadowPen.LineJoin = LineJoin.Round;
+                    g.DrawPath(shadowPen, shadowPath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 创建渐变画笔（从源节点颜色渐变到目标节点颜色）
+        /// </summary>
+        private Pen CreateGradientPen(PointF start, PointF end, Color baseColor)
+        {
+            // 创建线性渐变画笔
+            var gradientRect = new RectangleF(
+                Math.Min(start.X, end.X) - 50,
+                Math.Min(start.Y, end.Y) - 10,
+                Math.Abs(end.X - start.X) + 100,
+                Math.Abs(end.Y - start.Y) + 20
+            );
+            
+            // 源节点颜色（稍微浅一点）
+            var sourceColor = Color.FromArgb(
+                Math.Min(255, baseColor.R + 20),
+                Math.Min(255, baseColor.G + 20),
+                Math.Min(255, baseColor.B + 20)
+            );
+            
+            // 目标节点颜色（稍微深一点）
+            var targetColor = Color.FromArgb(
+                Math.Max(0, baseColor.R - 20),
+                Math.Max(0, baseColor.G - 20),
+                Math.Max(0, baseColor.B - 20)
+            );
+            
+            var brush = new LinearGradientBrush(gradientRect, sourceColor, targetColor, 0f);
+            return new Pen(brush, LineWidth);
         }
 
         /// <summary>

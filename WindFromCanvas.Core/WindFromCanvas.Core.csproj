@@ -77,6 +77,7 @@
     <Compile Include="Applications\FlowDesigner\Nodes\NoteNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\RouterNode.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\RouterConnection.cs" />
+    <Compile Include="Applications\FlowDesigner\Connections\ConnectionRouter.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\NoteEditor.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\NoteToolbar.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\FlowConnection.cs" />

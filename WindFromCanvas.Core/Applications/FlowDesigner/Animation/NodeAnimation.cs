@@ -9,11 +9,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
     /// </summary>
     public enum AnimationType
     {
-        FadeIn,      // 淡入
-        FadeOut,     // 淡出
-        ScalePulse,  // 缩放脉冲
-        Rotate,      // 旋转
-        SlideIn      // 滑入
+        FadeIn,          // 淡入
+        FadeOut,         // 淡出
+        ScalePulse,      // 缩放脉冲
+        Rotate,          // 旋转
+        SlideIn,         // 滑入
+        ConnectionFlow,  // 连线流动动画
+        ConnectionBuild, // 连接建立动画（曲线生长）
+        PortPulse        // 端口脉冲动画
     }
 
     /// <summary>
@@ -39,6 +42,15 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
 
         // 旋转
         public float RotationAngle { get; private set; }
+
+        // 连线流动动画
+        public float FlowAnimationOffset { get; set; }
+
+        // 连接建立动画进度（0-1）
+        public float BuildProgress { get; set; }
+
+        // 端口脉冲半径
+        public float PulseRadius { get; set; }
 
         // 缓动函数
         public Func<float, float> EasingFunction { get; set; }
@@ -116,9 +128,35 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Animation
                 case AnimationType.Rotate:
                     RotationAngle = 360f * easedProgress;
                     break;
+
+                case AnimationType.ConnectionFlow:
+                    // 连线流动：dash offset 循环变化
+                    FlowAnimationOffset = (progress * 20f) % 20f;
+                    // 循环动画，永不完成
+                    if (progress >= 1f)
+                    {
+                        ElapsedTime = 0f; // 重置时间以循环
+                    }
+                    break;
+
+                case AnimationType.ConnectionBuild:
+                    // 连接建立：曲线从起点生长到终点
+                    BuildProgress = easedProgress;
+                    break;
+
+                case AnimationType.PortPulse:
+                    // 端口脉冲：半径从0增长到最大值然后消失
+                    PulseRadius = Lerp(0f, 20f, progress);
+                    CurrentOpacity = Lerp(0.8f, 0f, progress);
+                    break;
             }
 
-            if (progress >= 1f)
+            // 连线流动动画永不完成（循环）
+            if (Type == AnimationType.ConnectionFlow)
+            {
+                // 不设置完成状态，保持循环
+            }
+            else if (progress >= 1f)
             {
                 IsCompleted = true;
                 IsRunning = false;

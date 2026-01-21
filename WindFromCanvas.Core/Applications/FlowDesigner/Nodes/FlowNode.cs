@@ -9,6 +9,17 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Models;
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
 {
     /// <summary>
+    /// 端口状态
+    /// </summary>
+    public enum PortState
+    {
+        Normal,    // 正常状态
+        Hovered,    // 悬停状态
+        Active,     // 激活状态（正在连接）
+        Connected   // 已连接状态
+    }
+
+    /// <summary>
     /// 流程节点基类
     /// </summary>
     public abstract class FlowNode : CanvasObject
@@ -142,6 +153,41 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
         /// 端口大小
         /// </summary>
         public virtual float PortSize { get; set; } = 8f;
+
+        /// <summary>
+        /// 端口热区大小（用于点击检测，大于实际绘制大小）
+        /// </summary>
+        public virtual float PortHitSize { get; set; } = 12f;
+
+        /// <summary>
+        /// 当前悬停的输入端口索引（-1表示无）
+        /// </summary>
+        public int HoveredInputPortIndex { get; set; } = -1;
+
+        /// <summary>
+        /// 当前悬停的输出端口索引（-1表示无）
+        /// </summary>
+        public int HoveredOutputPortIndex { get; set; } = -1;
+
+        /// <summary>
+        /// 激活的输入端口索引（正在连接时）
+        /// </summary>
+        public int ActiveInputPortIndex { get; set; } = -1;
+
+        /// <summary>
+        /// 激活的输出端口索引（正在连接时）
+        /// </summary>
+        public int ActiveOutputPortIndex { get; set; } = -1;
+
+        /// <summary>
+        /// 已连接的输入端口索引集合
+        /// </summary>
+        public HashSet<int> ConnectedInputPorts { get; set; } = new HashSet<int>();
+
+        /// <summary>
+        /// 已连接的输出端口索引集合
+        /// </summary>
+        public HashSet<int> ConnectedOutputPorts { get; set; } = new HashSet<int>();
 
         protected FlowNode()
         {
@@ -432,53 +478,181 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
             }
 
             // 绘制输入端口
-            foreach (var port in InputPorts)
+            for (int i = 0; i < InputPorts.Count; i++)
             {
-                DrawPort(g, port, true);
+                var portState = GetPortState(i, true);
+                DrawPort(g, InputPorts[i], true, portState);
             }
 
             // 绘制输出端口
-            foreach (var port in OutputPorts)
+            for (int i = 0; i < OutputPorts.Count; i++)
             {
-                DrawPort(g, port, false);
+                var portState = GetPortState(i, false);
+                DrawPort(g, OutputPorts[i], false, portState);
             }
         }
 
         /// <summary>
-        /// 绘制单个端口
+        /// 获取端口状态
         /// </summary>
-        protected virtual void DrawPort(Graphics g, PointF port, bool isInput)
+        protected virtual PortState GetPortState(int portIndex, bool isInput)
         {
+            if (isInput)
+            {
+                if (ActiveInputPortIndex == portIndex)
+                    return PortState.Active;
+                if (HoveredInputPortIndex == portIndex)
+                    return PortState.Hovered;
+                if (ConnectedInputPorts.Contains(portIndex))
+                    return PortState.Connected;
+            }
+            else
+            {
+                if (ActiveOutputPortIndex == portIndex)
+                    return PortState.Active;
+                if (HoveredOutputPortIndex == portIndex)
+                    return PortState.Hovered;
+                if (ConnectedOutputPorts.Contains(portIndex))
+                    return PortState.Connected;
+            }
+            return PortState.Normal;
+        }
+
+        /// <summary>
+        /// 绘制单个端口（根据状态绘制不同效果）
+        /// </summary>
+        protected virtual void DrawPort(Graphics g, PointF port, bool isInput, PortState state)
+        {
+            float size = PortSize;
+            float scale = 1f;
+            Color fillColor = Color.White;
+            Color borderColor = BorderColor;
+            float borderWidth = 1.5f;
+            bool showGlow = false;
+
+            // 根据状态设置不同的视觉效果
+            switch (state)
+            {
+                case PortState.Normal:
+                    fillColor = Color.White;
+                    borderColor = BorderColor;
+                    borderWidth = 1.5f;
+                    break;
+
+                case PortState.Hovered:
+                    fillColor = Color.White;
+                    borderColor = Color.FromArgb(59, 130, 246); // 蓝色
+                    borderWidth = 2f;
+                    scale = 1.2f; // 放大1.2倍
+                    showGlow = true;
+                    break;
+
+                case PortState.Active:
+                    fillColor = Color.FromArgb(59, 130, 246); // 蓝色填充
+                    borderColor = Color.FromArgb(59, 130, 246);
+                    borderWidth = 2f;
+                    scale = 1.3f; // 放大1.3倍
+                    showGlow = true;
+                    break;
+
+                case PortState.Connected:
+                    fillColor = Color.White;
+                    borderColor = Color.FromArgb(16, 185, 129); // 绿色边框
+                    borderWidth = 2f;
+                    break;
+            }
+
+            size *= scale;
             var rect = new RectangleF(
-                port.X - PortSize / 2,
-                port.Y - PortSize / 2,
-                PortSize,
-                PortSize
+                port.X - size / 2,
+                port.Y - size / 2,
+                size,
+                size
             );
 
-            using (var brush = new SolidBrush(Color.White))
+            // 绘制外发光效果（悬停/激活时）
+            if (showGlow)
+            {
+                var glowRect = new RectangleF(
+                    port.X - size / 2 - 3,
+                    port.Y - size / 2 - 3,
+                    size + 6,
+                    size + 6
+                );
+                using (var glowBrush = new SolidBrush(Color.FromArgb(30, borderColor.R, borderColor.G, borderColor.B)))
+                {
+                    g.FillEllipse(glowBrush, glowRect);
+                }
+            }
+
+            // 绘制端口填充
+            using (var brush = new SolidBrush(fillColor))
             {
                 g.FillEllipse(brush, rect);
             }
-            using (var pen = new Pen(BorderColor, 1.5f))
+
+            // 绘制端口边框
+            using (var pen = new Pen(borderColor, borderWidth))
             {
                 g.DrawEllipse(pen, rect);
+            }
+
+            // 已连接状态：绘制内部小点
+            if (state == PortState.Connected)
+            {
+                var dotSize = size * 0.4f;
+                var dotRect = new RectangleF(
+                    port.X - dotSize / 2,
+                    port.Y - dotSize / 2,
+                    dotSize,
+                    dotSize
+                );
+                using (var dotBrush = new SolidBrush(Color.FromArgb(16, 185, 129)))
+                {
+                    g.FillEllipse(dotBrush, dotRect);
+                }
             }
         }
 
         /// <summary>
-        /// 检测端口点击
+        /// 检测端口点击（使用热区大小）
         /// </summary>
         public virtual PointF? HitTestPort(PointF point, bool isOutput)
         {
             var ports = isOutput ? OutputPorts : InputPorts;
-            foreach (var port in ports)
+            var hitRadius = PortHitSize / 2f;
+            var hitRadiusSquared = hitRadius * hitRadius;
+
+            for (int i = 0; i < ports.Count; i++)
             {
+                var port = ports[i];
                 var dx = point.X - port.X;
                 var dy = point.Y - port.Y;
-                if (dx * dx + dy * dy <= PortSize * PortSize)
+                if (dx * dx + dy * dy <= hitRadiusSquared)
                 {
                     return port;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 检测端口点击并返回端口索引
+        /// </summary>
+        public virtual int? HitTestPortIndex(PointF point, bool isOutput)
+        {
+            var ports = isOutput ? OutputPorts : InputPorts;
+            var hitRadius = PortHitSize / 2f;
+            var hitRadiusSquared = hitRadius * hitRadius;
+
+            for (int i = 0; i < ports.Count; i++)
+            {
+                var port = ports[i];
+                var dx = point.X - port.X;
+                var dy = point.Y - port.Y;
+                if (dx * dx + dy * dy <= hitRadiusSquared)
+                {
+                    return i;
                 }
             }
             return null;

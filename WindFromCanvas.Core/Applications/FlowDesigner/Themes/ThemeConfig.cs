@@ -16,6 +16,12 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Themes
         public abstract Color Warning { get; }
         public abstract Color Ring { get; } // 悬停边框色
         public abstract Color GridColor { get; }
+        
+        // 连接线颜色
+        public abstract Color ConnectionLine { get; } // 连接线默认颜色
+        public abstract Color ConnectionHover { get; } // 连接线悬停颜色
+        public abstract Color ConnectionSelected { get; } // 连接线选中颜色
+        public abstract Color ConnectionShadow { get; } // 连接线阴影颜色
     }
 
     /// <summary>
@@ -32,6 +38,10 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Themes
         public override Color Warning => Color.FromArgb(234, 179, 8); // #EAB308
         public override Color Ring => Color.FromArgb(148, 163, 184); // #94A3B8
         public override Color GridColor => Color.FromArgb(226, 232, 240); // #E2E8F0
+        public override Color ConnectionLine => Color.FromArgb(148, 163, 184); // #94A3B8
+        public override Color ConnectionHover => Color.FromArgb(59, 130, 246); // #3B82F6
+        public override Color ConnectionSelected => Color.FromArgb(59, 130, 246); // #3B82F6
+        public override Color ConnectionShadow => Color.FromArgb(30, 0, 0, 0); // 半透明黑色
     }
 
     /// <summary>
@@ -48,5 +58,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Themes
         public override Color Warning => Color.FromArgb(251, 191, 36); // #FBBF24
         public override Color Ring => Color.FromArgb(100, 116, 139); // #64748B
         public override Color GridColor => Color.FromArgb(51, 65, 85); // #334155
+        public override Color ConnectionLine => Color.FromArgb(100, 116, 139); // #64748B
+        public override Color ConnectionHover => Color.FromArgb(96, 165, 250); // #60A5FA
+        public override Color ConnectionSelected => Color.FromArgb(96, 165, 250); // #60A5FA
+        public override Color ConnectionShadow => Color.FromArgb(50, 0, 0, 0); // 半透明黑色
     }
 }

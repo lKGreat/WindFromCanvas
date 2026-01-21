@@ -96,6 +96,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         private PointF _connectionPreviewEnd;
 
         /// <summary>
+        /// 候选目标节点（正在连接时鼠标悬停的节点）
+        /// </summary>
+        private FlowNode _potentialTargetNode;
+
+        /// <summary>
+        /// 连接预览动画偏移（用于虚线流动效果）
+        /// </summary>
+        private float _connectionPreviewAnimationOffset = 0f;
+
+        /// <summary>
         /// 当前右键点击的连接线
         /// </summary>
         private FlowConnection _rightClickedConnection;
@@ -210,6 +220,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             _contextMenu.DeleteRequested += ContextMenu_DeleteRequested;
             _contextMenu.PropertiesRequested += ContextMenu_PropertiesRequested;
             _contextMenu.SkipNodeRequested += ContextMenu_SkipNodeRequested;
+
+            // 订阅动画更新事件，触发重绘
+            WindFromCanvas.Core.Applications.FlowDesigner.Animation.AnimationManager.Instance.AnimationUpdated += (s, e) => Invalidate();
         }
 
         /// <summary>
@@ -346,6 +359,55 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             );
 
             var connection = new FlowConnection(connectionData, sourceNode, targetNode);
+            
+            // 添加连接建立动画
+            if (AnimationManager.Instance.IsEnabled)
+            {
+                connection.BuildProgress = 0f;
+                var buildAnimation = AnimationManager.Instance.CreateConnectionBuildAnimation(0.5f);
+                AnimationManager.Instance.AddAnimation(connection, buildAnimation);
+                
+                // 延迟启动流动动画（在建立动画完成后）
+                var timer = new Timer();
+                timer.Interval = 600; // 500ms动画 + 100ms缓冲
+                timer.Tick += (s, e) =>
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    connection.BuildProgress = 1f;
+                    var flowAnimation = AnimationManager.Instance.CreateConnectionFlowAnimation();
+                    AnimationManager.Instance.AddAnimation(connection, flowAnimation);
+                };
+                timer.Start();
+            }
+            else
+            {
+                // 动画未启用时，直接启动流动动画
+                connection.BuildProgress = 1f;
+                var flowAnimation = AnimationManager.Instance.CreateConnectionFlowAnimation();
+                AnimationManager.Instance.AddAnimation(connection, flowAnimation);
+            }
+            
+            // 添加端口脉冲动画
+            if (AnimationManager.Instance.IsEnabled)
+            {
+                var sourcePortPulse = AnimationManager.Instance.CreatePortPulseAnimation(0.6f);
+                AnimationManager.Instance.AddAnimation(sourceNode, sourcePortPulse);
+                
+                var targetPortPulse = AnimationManager.Instance.CreatePortPulseAnimation(0.6f);
+                AnimationManager.Instance.AddAnimation(targetNode, targetPortPulse);
+            }
+            
+            // 标记端口为已连接
+            if (sourceNode.OutputPorts.Count > 0)
+            {
+                sourceNode.ConnectedOutputPorts.Add(0);
+            }
+            if (targetNode.InputPorts.Count > 0)
+            {
+                targetNode.ConnectedInputPorts.Add(0);
+            }
+            
             AddConnection(connection);
             Document.Connections.Add(connectionData);
             return connection;
@@ -527,6 +589,44 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             else if (_isCreatingConnection && _connectionSourceNode != null)
             {
                 _connectionPreviewEnd = e.Location;
+                
+                // 检测候选目标节点
+                var worldPoint = ScreenToWorld(e.Location);
+                var targetNode = HitTestNode(worldPoint);
+                
+                // 清除之前的目标节点端口高亮
+                if (_potentialTargetNode != null && _potentialTargetNode != targetNode)
+                {
+                    _potentialTargetNode.HoveredInputPortIndex = -1;
+                    Invalidate();
+                }
+                
+                // 设置新的目标节点
+                _potentialTargetNode = targetNode;
+                
+                // 高亮目标节点的输入端口
+                if (_potentialTargetNode != null && _potentialTargetNode != _connectionSourceNode)
+                {
+                    // 检测鼠标是否接近输入端口
+                    var portIndex = _potentialTargetNode.HitTestPortIndex(worldPoint, false);
+                    if (portIndex.HasValue)
+                    {
+                        _potentialTargetNode.HoveredInputPortIndex = portIndex.Value;
+                        // 端口吸附：将预览终点吸附到端口位置
+                        var port = _potentialTargetNode.InputPorts[portIndex.Value];
+                        _connectionPreviewEnd = WorldToScreen(port);
+                    }
+                    else
+                    {
+                        _potentialTargetNode.HoveredInputPortIndex = -1;
+                    }
+                }
+                
+                // 更新连接预览动画
+                _connectionPreviewAnimationOffset += 2f;
+                if (_connectionPreviewAnimationOffset > 20f)
+                    _connectionPreviewAnimationOffset = 0f;
+                
                 Invalidate();
             }
             else if (_draggingNode != null)
@@ -560,12 +660,28 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     // 完成连接创建
                     var worldPoint = ScreenToWorld(e.Location);
                     var targetNode = HitTestNode(worldPoint);
+                    
+                    // 如果没有直接点击节点，尝试使用候选目标节点
+                    if (targetNode == null && _potentialTargetNode != null)
+                    {
+                        targetNode = _potentialTargetNode;
+                    }
+                    
                     if (targetNode != null && targetNode != _connectionSourceNode)
                     {
                         CreateConnection(_connectionSourceNode, targetNode);
                     }
+                    
+                    // 清除状态
+                    if (_potentialTargetNode != null)
+                    {
+                        _potentialTargetNode.HoveredInputPortIndex = -1;
+                        _potentialTargetNode = null;
+                    }
+                    
                     _isCreatingConnection = false;
                     _connectionSourceNode = null;
+                    _connectionPreviewAnimationOffset = 0f;
                     Invalidate();
                 }
 
@@ -728,6 +844,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
 
                     // 应用动画效果
                     var node = obj as FlowNode;
+                    var connection = obj as Connections.FlowConnection;
+                    
                     if (node != null)
                     {
                         var animations = AnimationManager.Instance.GetAnimations(node);
@@ -738,6 +856,19 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                         else
                         {
                             obj.Draw(g);
+                        }
+                    }
+                    else if (connection != null)
+                    {
+                        // 应用连线动画
+                        var animations = AnimationManager.Instance.GetAnimations(connection);
+                        if (animations.Count > 0)
+                        {
+                            ApplyConnectionAnimations(g, connection, animations);
+                        }
+                        else
+                        {
+                            connection.Draw(g);
                         }
                     }
                     else
@@ -808,19 +939,10 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 DrawDragPreview(g, _draggingNodes, _dragPreviewPosition);
             }
 
-            // 绘制连接预览线
+            // 绘制连接预览线（贝塞尔曲线）
             if (_isCreatingConnection && _connectionSourceNode != null)
             {
-                var startPoint = new PointF(
-                    (_connectionSourceNode.X + _connectionSourceNode.Width) * ZoomFactor + PanOffset.X,
-                    (_connectionSourceNode.Y + _connectionSourceNode.Height / 2) * ZoomFactor + PanOffset.Y
-                );
-
-                using (var pen = new Pen(Color.Gray, 2))
-                {
-                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
-                    g.DrawLine(pen, startPoint, _connectionPreviewEnd);
-                }
+                DrawConnectionPreview(g);
             }
 
             // 绘制对齐辅助线
@@ -1508,6 +1630,109 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
+        /// 绘制连接预览（贝塞尔曲线，带目标高亮）
+        /// </summary>
+        private void DrawConnectionPreview(Graphics g)
+        {
+            if (_connectionSourceNode == null) return;
+
+            // 获取源节点输出端口位置（屏幕坐标）
+            var sourceBounds = _connectionSourceNode.GetBounds();
+            var sourcePort = new PointF(
+                sourceBounds.Right * ZoomFactor + PanOffset.X,
+                (sourceBounds.Y + sourceBounds.Height / 2) * ZoomFactor + PanOffset.Y
+            );
+
+            // 目标点（屏幕坐标）
+            var targetPoint = _connectionPreviewEnd;
+
+            // 如果存在候选目标节点，高亮其输入端口
+            if (_potentialTargetNode != null && _potentialTargetNode != _connectionSourceNode)
+            {
+                var targetBounds = _potentialTargetNode.GetBounds();
+                
+                // 绘制目标节点高亮光环
+                var highlightRect = new RectangleF(
+                    targetBounds.X * ZoomFactor + PanOffset.X - 5,
+                    targetBounds.Y * ZoomFactor + PanOffset.Y - 5,
+                    targetBounds.Width * ZoomFactor + 10,
+                    targetBounds.Height * ZoomFactor + 10
+                );
+                
+                using (var pen = new Pen(Color.FromArgb(100, 59, 130, 246), 3f))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    g.DrawRectangle(pen, highlightRect.X, highlightRect.Y, highlightRect.Width, highlightRect.Height);
+                }
+            }
+
+            // 计算贝塞尔曲线控制点
+            var dx = Math.Abs(targetPoint.X - sourcePort.X);
+            var controlOffset = Math.Max(50f, dx * 0.4f);
+            var cp1 = new PointF(sourcePort.X + controlOffset, sourcePort.Y);
+            var cp2 = new PointF(targetPoint.X - controlOffset, targetPoint.Y);
+
+            // 绘制贝塞尔曲线预览
+            using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                path.AddBezier(sourcePort, cp1, cp2, targetPoint);
+
+                // 使用虚线样式，带流动动画效果
+                using (var pen = new Pen(Color.FromArgb(148, 163, 184), 2f))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    pen.DashPattern = new float[] { 8f, 4f };
+                    pen.DashOffset = _connectionPreviewAnimationOffset;
+                    g.DrawPath(pen, path);
+                }
+            }
+
+            // 绘制源端口高亮
+            DrawPortHighlight(g, sourcePort, true);
+            
+            // 如果接近目标端口，绘制目标端口高亮
+            if (_potentialTargetNode != null && _potentialTargetNode.HoveredInputPortIndex >= 0)
+            {
+                var targetPort = _potentialTargetNode.InputPorts[_potentialTargetNode.HoveredInputPortIndex];
+                var targetPortScreen = WorldToScreen(targetPort);
+                DrawPortHighlight(g, targetPortScreen, false);
+            }
+        }
+
+        /// <summary>
+        /// 绘制端口高亮
+        /// </summary>
+        private void DrawPortHighlight(Graphics g, PointF portScreen, bool isOutput)
+        {
+            var highlightSize = 16f;
+            var highlightRect = new RectangleF(
+                portScreen.X - highlightSize / 2,
+                portScreen.Y - highlightSize / 2,
+                highlightSize,
+                highlightSize
+            );
+
+            // 外圈高亮
+            using (var brush = new SolidBrush(Color.FromArgb(50, 59, 130, 246)))
+            {
+                g.FillEllipse(brush, highlightRect);
+            }
+
+            // 内圈
+            var innerSize = highlightSize * 0.6f;
+            var innerRect = new RectangleF(
+                portScreen.X - innerSize / 2,
+                portScreen.Y - innerSize / 2,
+                innerSize,
+                innerSize
+            );
+            using (var brush = new SolidBrush(Color.FromArgb(150, 59, 130, 246)))
+            {
+                g.FillEllipse(brush, innerRect);
+            }
+        }
+
+        /// <summary>
         /// 绘制拖拽预览（半透明预览层，参考Activepieces）
         /// </summary>
         private void DrawDragPreview(Graphics g, List<FlowNode> nodes, PointF mousePosition)
@@ -1714,6 +1939,28 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
+        /// 应用连线动画效果
+        /// </summary>
+        private void ApplyConnectionAnimations(Graphics g, Connections.FlowConnection connection, List<NodeAnimation> animations)
+        {
+            foreach (var animation in animations)
+            {
+                switch (animation.Type)
+                {
+                    case AnimationType.ConnectionFlow:
+                        connection.FlowAnimationOffset = animation.FlowAnimationOffset;
+                        break;
+                    case AnimationType.ConnectionBuild:
+                        connection.BuildProgress = animation.BuildProgress;
+                        break;
+                }
+            }
+            
+            // 绘制连线（动画值已更新）
+            connection.Draw(g);
+        }
+
+        /// <summary>
         /// 应用节点动画效果
         /// </summary>
         private void ApplyNodeAnimations(Graphics g, FlowNode node, List<NodeAnimation> animations)
@@ -1735,6 +1982,10 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                         break;
                     case AnimationType.Rotate:
                         rotation = animation.RotationAngle;
+                        break;
+                    case AnimationType.PortPulse:
+                        // 端口脉冲动画在 DrawPorts 中处理
+                        DrawPortPulse(g, node, animation);
                         break;
                 }
             }
@@ -1794,6 +2045,33 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
 
             // 重置变换
             g.ResetTransform();
+        }
+
+        /// <summary>
+        /// 绘制端口脉冲动画
+        /// </summary>
+        private void DrawPortPulse(Graphics g, FlowNode node, NodeAnimation animation)
+        {
+            var bounds = node.GetBounds();
+            var ports = node.OutputPorts.Concat(node.InputPorts).ToList();
+            
+            foreach (var port in ports)
+            {
+                var screenPort = WorldToScreen(port);
+                var pulseRect = new RectangleF(
+                    screenPort.X - animation.PulseRadius,
+                    screenPort.Y - animation.PulseRadius,
+                    animation.PulseRadius * 2,
+                    animation.PulseRadius * 2
+                );
+                
+                using (var brush = new SolidBrush(Color.FromArgb(
+                    (int)(animation.CurrentOpacity * 255),
+                    59, 130, 246)))
+                {
+                    g.FillEllipse(brush, pulseRect);
+                }
+            }
         }
 
         /// <summary>
