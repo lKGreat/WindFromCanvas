@@ -64,6 +64,7 @@
     <Compile Include="Applications\FlowDesigner\Models\FlowNodeData.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowNodeType.cs" />
     <Compile Include="Applications\FlowDesigner\Models\NodeStatus.cs" />
+    <Compile Include="Applications\FlowDesigner\Models\NoteData.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowConnectionData.cs" />
     <Compile Include="Applications\FlowDesigner\Themes\ThemeConfig.cs" />
     <Compile Include="Applications\FlowDesigner\Themes\ThemeManager.cs" />
@@ -73,6 +74,7 @@
     <Compile Include="Applications\FlowDesigner\Nodes\DecisionNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\LoopNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\EndNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Nodes\NoteNode.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\FlowConnection.cs" />
     <Compile Include="Applications\FlowDesigner\FlowDesignerCanvas.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\ToolboxPanel.cs" />
@@ -82,6 +84,8 @@
     <Compile Include="Applications\FlowDesigner\Widgets\ShortcutHelpDialog.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\CanvasControlPanel.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\MinimapControl.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\NodeSelectorDialog.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\ToastNotification.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\ShortcutManager.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\NodeAlignmentHelper.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\IconCache.cs" />

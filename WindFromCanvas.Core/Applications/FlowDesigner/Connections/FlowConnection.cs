@@ -157,6 +157,53 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
             {
                 DrawAddButton(g, startPoint, endPoint);
             }
+
+            // 绘制连接线标签（如果有）
+            if (Data != null && !string.IsNullOrEmpty(Data.Label))
+            {
+                DrawLabel(g, startPoint, endPoint, color);
+            }
+        }
+
+        /// <summary>
+        /// 绘制连接线标签（中点位置）
+        /// </summary>
+        private void DrawLabel(Graphics g, PointF start, PointF end, Color lineColor)
+        {
+            var midPoint = new PointF((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+            var labelText = Data.Label;
+            
+            // 测量文本大小
+            var textSize = g.MeasureString(labelText, SystemFonts.DefaultFont);
+            var labelRect = new RectangleF(
+                midPoint.X - textSize.Width / 2 - 5,
+                midPoint.Y - textSize.Height / 2 - 3,
+                textSize.Width + 10,
+                textSize.Height + 6
+            );
+
+            // 绘制标签背景（白色，半透明）
+            using (var brush = new SolidBrush(Color.FromArgb(240, 255, 255, 255)))
+            {
+                g.FillRectangle(brush, labelRect);
+            }
+
+            // 绘制标签边框
+            using (var pen = new Pen(lineColor, 1f))
+            {
+                g.DrawRectangle(pen, labelRect.X, labelRect.Y, labelRect.Width, labelRect.Height);
+            }
+
+            // 绘制文本
+            using (var brush = new SolidBrush(Color.FromArgb(15, 23, 42)))
+            using (var sf = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            })
+            {
+                g.DrawString(labelText, SystemFonts.DefaultFont, brush, labelRect, sf);
+            }
         }
 
         /// <summary>
