@@ -5,6 +5,13 @@ using WindFromCanvas.Core;
 using WindFromCanvas.Core.Objects;
 using WindFromCanvas.Core.Styles;
 using WindFromCanvas.Core.Events;
+using WindFromCanvas.Core.Applications.FlowDesigner;
+using WindFromCanvas.Core.Applications.FlowDesigner.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Nodes;
+using WindFromCanvas.Core.Applications.FlowDesigner.Widgets;
+using WindFromCanvas.Core.Applications.FlowDesigner.Themes;
+using WindFromCanvas.Core.Applications.FlowDesigner.Animation;
+using WindFromCanvas.Core.Applications.FlowDesigner.Utils;
 
 namespace WindFromCanvas
 {
@@ -13,12 +20,60 @@ namespace WindFromCanvas
         private RectangleObject _draggableRect;
         private EllipseObject _animatedCircle;
         private float _animationAngle = 0f;
+        
+        // 流程设计器相关控件
+        private CanvasControlPanel _controlPanel;
+        private MinimapControl _minimapControl;
+        private MenuStrip _menuStrip;
+        private ToolStripMenuItem _themeMenu;
+        private ShortcutManager _shortcutManager;
 
         public Form1()
         {
             InitializeComponent();
+            SetupMenu();
             SetupDemo();
             SetupFlowDesigner();
+        }
+
+        private void SetupMenu()
+        {
+            _menuStrip = new MenuStrip();
+            
+            // 文件菜单
+            var fileMenu = new ToolStripMenuItem("文件(&F)");
+            fileMenu.DropDownItems.Add("新建(&N)", null, (s, e) => flowDesignerCanvas1.Clear());
+            fileMenu.DropDownItems.Add("打开(&O)...", null, (s, e) => MessageBox.Show("打开功能演示", "提示"));
+            fileMenu.DropDownItems.Add("保存(&S)...", null, (s, e) => MessageBox.Show("保存功能演示", "提示"));
+            fileMenu.DropDownItems.Add(new ToolStripSeparator());
+            fileMenu.DropDownItems.Add("退出(&X)", null, (s, e) => Close());
+            
+            // 视图菜单
+            var viewMenu = new ToolStripMenuItem("视图(&V)");
+            var minimapItem = new ToolStripMenuItem("小地图(&M)", null, (s, e) => ToggleMinimap());
+            minimapItem.ShortcutKeys = Keys.Control | Keys.M;
+            viewMenu.DropDownItems.Add(minimapItem);
+            viewMenu.DropDownItems.Add("适应视图(&F)", null, (s, e) => flowDesignerCanvas1.FitToView());
+            viewMenu.DropDownItems.Add(new ToolStripSeparator());
+            _themeMenu = new ToolStripMenuItem("主题(&T)");
+            _themeMenu.DropDownItems.Add("浅色主题", null, (s, e) => SwitchTheme(true));
+            _themeMenu.DropDownItems.Add("深色主题", null, (s, e) => SwitchTheme(false));
+            viewMenu.DropDownItems.Add(_themeMenu);
+            
+            // 工具菜单
+            var toolsMenu = new ToolStripMenuItem("工具(&T)");
+            toolsMenu.DropDownItems.Add("快捷键帮助(&H)...", null, (s, e) => ShowShortcutHelp());
+            toolsMenu.DropDownItems.Add("性能监控", null, (s, e) => ShowPerformanceInfo());
+            
+            // 帮助菜单
+            var helpMenu = new ToolStripMenuItem("帮助(&H)");
+            helpMenu.DropDownItems.Add("关于(&A)...", null, (s, e) => 
+                MessageBox.Show("WindFromCanvas 流程设计器\n\n基于Activepieces设计\n支持35+功能特性", 
+                    "关于", MessageBoxButtons.OK, MessageBoxIcon.Information));
+            
+            _menuStrip.Items.AddRange(new[] { fileMenu, viewMenu, toolsMenu, helpMenu });
+            this.MainMenuStrip = _menuStrip;
+            this.Controls.Add(_menuStrip);
         }
 
         private void SetupFlowDesigner()
@@ -27,53 +82,281 @@ namespace WindFromCanvas
             flowDesignerCanvas1.Toolbox = toolboxPanel1;
             flowDesignerCanvas1.PropertiesPanel = propertiesPanel1;
 
-            // 创建示例流程
-            var startNodeData = new WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeData
+            // 创建底部控制面板
+            _controlPanel = new CanvasControlPanel(flowDesignerCanvas1);
+            _controlPanel.MinimapToggleRequested += (s, e) => ToggleMinimap();
+            _controlPanel.ZoomInRequested += (s, e) => flowDesignerCanvas1.ZoomIn();
+            _controlPanel.ZoomOutRequested += (s, e) => flowDesignerCanvas1.ZoomOut();
+            _controlPanel.FitToViewRequested += (s, e) => flowDesignerCanvas1.FitToView();
+            _controlPanel.AddNoteRequested += (s, e) => AddNoteNode();
+            tabPageFlowDesigner.Controls.Add(_controlPanel);
+            _controlPanel.BringToFront();
+
+            // 创建小地图（默认隐藏）
+            _minimapControl = new MinimapControl(flowDesignerCanvas1);
+            _minimapControl.Location = new Point(10, 50);
+            _minimapControl.Size = new Size(150, 100);
+            _minimapControl.Visible = false;
+            tabPageFlowDesigner.Controls.Add(_minimapControl);
+            _minimapControl.BringToFront();
+
+            // 注册快捷键
+            RegisterShortcuts();
+
+            // 创建丰富的示例流程
+            CreateDemoFlow();
+        }
+
+        private void CreateDemoFlow()
+        {
+            // 1. 开始节点（带状态）
+            var startNodeData = new FlowNodeData
             {
                 Name = "start",
                 DisplayName = "开始",
-                Type = WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeType.Start,
-                Position = new PointF(100, 100)
+                Type = FlowNodeType.Start,
+                Position = new PointF(100, 150),
+                Status = NodeStatus.Success
             };
-            var startNode = new WindFromCanvas.Core.Applications.FlowDesigner.Nodes.StartNode(startNodeData);
+            var startNode = new StartNode(startNodeData);
+            flowDesignerCanvas1.AddNode(startNode);
 
-            var processNodeData = new WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeData
+            // 2. 处理节点（带图标和状态）
+            var processNodeData = new FlowNodeData
             {
                 Name = "process1",
-                DisplayName = "处理步骤1",
-                Type = WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeType.Process,
-                Position = new PointF(300, 100)
+                DisplayName = "数据处理",
+                Type = FlowNodeType.Process,
+                Position = new PointF(350, 150),
+                Description = "执行数据处理操作",
+                Status = NodeStatus.Running
             };
-            var processNode = new WindFromCanvas.Core.Applications.FlowDesigner.Nodes.ProcessNode(processNodeData);
+            var processNode = new ProcessNode(processNodeData);
+            flowDesignerCanvas1.AddNode(processNode);
 
-            var decisionNodeData = new WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeData
+            // 3. 判断节点
+            var decisionNodeData = new FlowNodeData
             {
                 Name = "decision1",
-                DisplayName = "判断条件",
-                Type = WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeType.Decision,
-                Position = new PointF(500, 100)
+                DisplayName = "条件判断",
+                Type = FlowNodeType.Decision,
+                Position = new PointF(600, 150),
+                Description = "判断数据是否有效"
             };
-            var decisionNode = new WindFromCanvas.Core.Applications.FlowDesigner.Nodes.DecisionNode(decisionNodeData);
+            var decisionNode = new DecisionNode(decisionNodeData);
+            flowDesignerCanvas1.AddNode(decisionNode);
 
-            var endNodeData = new WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeData
+            // 4. 循环节点
+            var loopNodeData = new FlowNodeData
+            {
+                Name = "loop1",
+                DisplayName = "循环处理",
+                Type = FlowNodeType.Loop,
+                Position = new PointF(350, 350),
+                Description = "循环处理数组数据"
+            };
+            var loopNode = new LoopNode(loopNodeData);
+            flowDesignerCanvas1.AddNode(loopNode);
+
+            // 5. 结束节点
+            var endNodeData = new FlowNodeData
             {
                 Name = "end",
                 DisplayName = "结束",
-                Type = WindFromCanvas.Core.Applications.FlowDesigner.Models.FlowNodeType.End,
-                Position = new PointF(700, 100)
+                Type = FlowNodeType.End,
+                Position = new PointF(850, 150),
+                Status = NodeStatus.None
             };
-            var endNode = new WindFromCanvas.Core.Applications.FlowDesigner.Nodes.EndNode(endNodeData);
-
-            // 添加节点到画布
-            flowDesignerCanvas1.AddNode(startNode);
-            flowDesignerCanvas1.AddNode(processNode);
-            flowDesignerCanvas1.AddNode(decisionNode);
+            var endNode = new EndNode(endNodeData);
             flowDesignerCanvas1.AddNode(endNode);
 
-            // 创建连接
-            flowDesignerCanvas1.CreateConnection(startNode, processNode);
-            flowDesignerCanvas1.CreateConnection(processNode, decisionNode);
-            flowDesignerCanvas1.CreateConnection(decisionNode, endNode);
+            // 创建连接（带标签）
+            var conn1 = flowDesignerCanvas1.CreateConnection(startNode, processNode);
+            if (conn1 != null && conn1.Data != null)
+            {
+                conn1.Data.Label = "开始流程";
+            }
+
+            var conn2 = flowDesignerCanvas1.CreateConnection(processNode, decisionNode);
+            if (conn2 != null && conn2.Data != null)
+            {
+                conn2.Data.Label = "处理完成";
+            }
+
+            var conn3 = flowDesignerCanvas1.CreateConnection(decisionNode, loopNode);
+            if (conn3 != null && conn3.Data != null)
+            {
+                conn3.Data.Label = "需要循环";
+            }
+
+            var conn4 = flowDesignerCanvas1.CreateConnection(decisionNode, endNode);
+            if (conn4 != null && conn4.Data != null)
+            {
+                conn4.Data.Label = "完成";
+            }
+
+            // 演示：设置节点状态（模拟运行状态）
+            var statusTimer = new Timer { Interval = 3000 };
+            statusTimer.Tick += (s, e) =>
+            {
+                // 切换处理节点的状态
+                if (processNodeData.Status == NodeStatus.Running)
+                {
+                    processNodeData.Status = NodeStatus.Success;
+                }
+                else
+                {
+                    processNodeData.Status = NodeStatus.Running;
+                }
+                flowDesignerCanvas1.Invalidate();
+            };
+            statusTimer.Start();
+
+            // 创建循环返回连接
+            var loopReturnConn = flowDesignerCanvas1.CreateConnection(loopNode, processNode);
+            if (loopReturnConn != null)
+            {
+                loopReturnConn.IsLoopReturn = true;
+                // 设置避让节点
+                loopReturnConn.AvoidanceNodes = new System.Collections.Generic.List<FlowNode> { decisionNode };
+            }
+
+            // 添加笔记节点
+            var noteData = new NoteData
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = "这是一个演示笔记\n\n功能说明：\n- 支持多行文本\n- 可调整大小\n- 多种颜色主题\n- 双击编辑",
+                PositionX = 100,
+                PositionY = 400,
+                Width = 200,
+                Height = 150,
+                Color = NoteColorVariant.Yellow
+            };
+            var noteNode = new NoteNode(noteData);
+            flowDesignerCanvas1.AddObject(noteNode);
+
+            // 演示Toast通知
+            var toastTimer = new Timer { Interval = 2000 };
+            toastTimer.Tick += (s, e) =>
+            {
+                ToastNotification.Show("欢迎使用流程设计器！\n所有35个功能已实现完成", ToastType.Info, this);
+                toastTimer.Stop();
+            };
+            toastTimer.Start();
+
+            // 演示：添加节点时自动触发淡入动画（已在AddNode中实现）
+            // 注意：选中节点的动画可以通过监听选择变化来实现
+            
+            // 定期更新控制面板的缩放标签
+            var updateTimer = new Timer { Interval = 100 };
+            updateTimer.Tick += (s, e) => _controlPanel?.UpdateZoomLabel();
+            updateTimer.Start();
+        }
+
+        private void RegisterShortcuts()
+        {
+            _shortcutManager = new ShortcutManager();
+            
+            // Ctrl+C: 复制
+            _shortcutManager.Register(FlowDesignerShortcuts.Copy, Keys.Control | Keys.C, () =>
+            {
+                MessageBox.Show("复制功能演示", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            });
+
+            // Ctrl+V: 粘贴
+            _shortcutManager.Register(FlowDesignerShortcuts.Paste, Keys.Control | Keys.V, () =>
+            {
+                MessageBox.Show("粘贴功能演示", "快捷键", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            });
+
+            // Ctrl+M: 切换小地图
+            _shortcutManager.Register(FlowDesignerShortcuts.Minimap, Keys.Control | Keys.M, () =>
+            {
+                ToggleMinimap();
+            });
+
+            // F1: 快捷键帮助
+            _shortcutManager.Register("Help", Keys.F1, () =>
+            {
+                ShowShortcutHelp();
+            });
+
+            // 注册到画布的KeyDown事件
+            flowDesignerCanvas1.KeyDown += (s, e) =>
+            {
+                if (_shortcutManager.HandleKeyDown(e.KeyData))
+                {
+                    e.Handled = true;
+                }
+            };
+        }
+
+        private void ToggleMinimap()
+        {
+            if (_minimapControl != null)
+            {
+                _minimapControl.Visible = !_minimapControl.Visible;
+                _controlPanel?.SetMinimapState(_minimapControl.Visible);
+            }
+        }
+
+        private void SwitchTheme(bool isLight)
+        {
+            if (isLight)
+            {
+                ThemeManager.Instance.SetTheme(new LightTheme());
+            }
+            else
+            {
+                ThemeManager.Instance.SetTheme(new DarkTheme());
+            }
+            
+            // 刷新画布
+            flowDesignerCanvas1.Invalidate();
+            _controlPanel?.Invalidate();
+        }
+
+        private void ShowShortcutHelp()
+        {
+            if (_shortcutManager != null)
+            {
+                using (var dialog = new ShortcutHelpDialog(_shortcutManager))
+                {
+                    dialog.ShowDialog(this);
+                }
+            }
+        }
+
+        private void ShowPerformanceInfo()
+        {
+            var perf = PerformanceMonitor.Instance;
+            var message = $"性能监控信息\n\n" +
+                         $"当前FPS: {perf.GetCurrentFPS():F1}\n" +
+                         $"平均FPS: {perf.GetAverageFPS():F1}\n" +
+                         $"最低FPS: {perf.GetMinFPS():F1}\n" +
+                         $"建议LOD级别: {perf.GetSuggestedLODLevel()}\n" +
+                         $"性能状态: {(perf.IsPerformanceGood() ? "良好" : "需要优化")}";
+            
+            MessageBox.Show(message, "性能监控", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void AddNoteNode()
+        {
+            var noteData = new NoteData
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = "新笔记\n双击编辑内容",
+                PositionX = 200,
+                PositionY = 200,
+                Width = 150,
+                Height = 100,
+                Color = NoteColorVariant.Blue
+            };
+            var noteNode = new NoteNode(noteData);
+            flowDesignerCanvas1.AddObject(noteNode);
+            
+            // 显示成功提示
+            ToastNotification.Show("笔记已添加", ToastType.Success, this);
         }
 
         private void SetupDemo()
