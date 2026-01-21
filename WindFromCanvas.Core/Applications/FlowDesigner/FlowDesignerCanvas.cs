@@ -742,15 +742,84 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
-        /// 绘制网格
+        /// 网格类型（点状或线状）
+        /// </summary>
+        public enum GridType
+        {
+            Lines,  // 线状网格
+            Dots    // 点状网格（Activepieces风格）
+        }
+
+        /// <summary>
+        /// 网格类型
+        /// </summary>
+        public GridType GridStyle { get; set; } = GridType.Dots;
+
+        /// <summary>
+        /// 绘制网格（支持点状和线状）
         /// </summary>
         private void DrawGrid(Graphics g)
+        {
+            var theme = Themes.ThemeManager.Instance.CurrentTheme;
+            var gridColor = theme.GridColor;
+            
+            if (GridStyle == GridType.Dots)
+            {
+                DrawDotGrid(g, gridColor);
+            }
+            else
+            {
+                DrawLineGrid(g, gridColor);
+            }
+        }
+
+        /// <summary>
+        /// 绘制点状网格（Activepieces风格）
+        /// </summary>
+        private void DrawDotGrid(Graphics g, Color gridColor)
+        {
+            var gridSize = GridSize * ZoomFactor;
+            var dotSize = 1f; // Activepieces标准：1px
+            var startX = (PanOffset.X % gridSize) - gridSize;
+            var startY = (PanOffset.Y % gridSize) - gridSize;
+
+            // 根据缩放级别调整点的大小和间距
+            if (ZoomFactor < 0.5f)
+            {
+                // 缩放太小时，增大间距，减少点数
+                gridSize *= 2;
+                startX = (PanOffset.X % gridSize) - gridSize;
+                startY = (PanOffset.Y % gridSize) - gridSize;
+            }
+            else if (ZoomFactor > 1.5f)
+            {
+                // 放大时，可以显示更密集的点
+                dotSize = 1.5f;
+            }
+
+            using (var brush = new SolidBrush(gridColor))
+            {
+                for (float x = startX; x < this.Width + gridSize; x += gridSize)
+                {
+                    for (float y = startY; y < this.Height + gridSize; y += gridSize)
+                    {
+                        // 绘制点（小圆）
+                        g.FillEllipse(brush, x - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 绘制线状网格（原有实现）
+        /// </summary>
+        private void DrawLineGrid(Graphics g, Color gridColor)
         {
             var gridSize = GridSize * ZoomFactor;
             var startX = (PanOffset.X % gridSize) - gridSize;
             var startY = (PanOffset.Y % gridSize) - gridSize;
 
-            using (var pen = new Pen(Color.FromArgb(220, 220, 220), 1))
+            using (var pen = new Pen(gridColor, 1))
             {
                 // 绘制垂直线
                 for (float x = startX; x < this.Width + gridSize; x += gridSize)

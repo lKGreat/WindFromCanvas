@@ -16,50 +16,29 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
 
         public LoopNode() : base()
         {
-            Width = 200f;
-            Height = 100f;
-            BackgroundColor = Color.FromArgb(156, 39, 176); // 紫色
-            BorderColor = Color.FromArgb(123, 31, 162);
-            TextColor = Color.White;
+            Width = 232f; // Activepieces标准尺寸
+            Height = 60f;
+            BackgroundColor = Color.FromArgb(255, 255, 255);
+            BorderColor = Color.FromArgb(226, 232, 240);
+            TextColor = Color.FromArgb(15, 23, 42);
             Draggable = true;
+            EnableShadow = true;
             ChildNodes = new System.Collections.Generic.List<FlowNode>();
         }
 
         public LoopNode(FlowNodeData data) : base(data)
         {
-            Width = 200f;
-            Height = 100f;
-            BackgroundColor = Color.FromArgb(156, 39, 176);
-            BorderColor = Color.FromArgb(123, 31, 162);
-            TextColor = Color.White;
+            Width = 232f;
+            Height = 60f;
+            BackgroundColor = Color.FromArgb(255, 255, 255);
+            BorderColor = Color.FromArgb(226, 232, 240);
+            TextColor = Color.FromArgb(15, 23, 42);
             Draggable = true;
+            EnableShadow = true;
             ChildNodes = new System.Collections.Generic.List<FlowNode>();
         }
 
-        protected override void DrawIcon(Graphics g, RectangleF rect)
-        {
-            // 循环节点图标：绘制一个循环箭头
-            var iconSize = 24f;
-            var iconRect = new RectangleF(
-                rect.X + 10,
-                rect.Y + (rect.Height - iconSize) / 2,
-                iconSize,
-                iconSize
-            );
-
-            // 绘制一个简单的循环图标（圆形箭头）
-            using (var pen = new Pen(Color.White, 2))
-            {
-                // 绘制圆弧表示循环
-                g.DrawArc(pen, iconRect.X, iconRect.Y, iconSize, iconSize, 0, 270);
-                
-                // 绘制箭头
-                var arrowX = iconRect.X + iconSize;
-                var arrowY = iconRect.Y + iconSize / 2;
-                g.DrawLine(pen, arrowX - 5, arrowY - 3, arrowX, arrowY);
-                g.DrawLine(pen, arrowX - 5, arrowY + 3, arrowX, arrowY);
-            }
-        }
+        // LoopNode使用基类的DrawIcon方法，会自动加载默认图标
 
         public override void Draw(Graphics g)
         {

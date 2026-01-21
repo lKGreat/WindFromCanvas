@@ -12,12 +12,13 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
     {
         public DecisionNode() : base()
         {
-            Width = 120f;
-            Height = 80f;
-            BackgroundColor = Color.FromArgb(255, 193, 7); // 黄色
-            BorderColor = Color.FromArgb(255, 160, 0);
-            TextColor = Color.Black;
+            Width = 232f; // Activepieces标准尺寸
+            Height = 60f;
+            BackgroundColor = Color.FromArgb(255, 255, 255); // 白色背景
+            BorderColor = Color.FromArgb(226, 232, 240);
+            TextColor = Color.FromArgb(15, 23, 42);
             Draggable = true;
+            EnableShadow = true;
             
             // 判断节点：1个输入端口，2个输出端口
             InputPorts.Add(new PointF(0, Height / 2)); // 左侧中点
@@ -27,12 +28,13 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
 
         public DecisionNode(FlowNodeData data) : base(data)
         {
-            Width = 120f;
-            Height = 80f;
-            BackgroundColor = Color.FromArgb(255, 193, 7);
-            BorderColor = Color.FromArgb(255, 160, 0);
-            TextColor = Color.Black;
+            Width = 232f;
+            Height = 60f;
+            BackgroundColor = Color.FromArgb(255, 255, 255);
+            BorderColor = Color.FromArgb(226, 232, 240);
+            TextColor = Color.FromArgb(15, 23, 42);
             Draggable = true;
+            EnableShadow = true;
         }
 
         public override void Draw(Graphics g)
@@ -40,25 +42,41 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
             if (!Visible || Data == null) return;
 
             var bounds = GetBounds();
-            var centerX = bounds.X + bounds.Width / 2;
-            var centerY = bounds.Y + bounds.Height / 2;
+            var rect = new RectangleF(X, Y, Width, Height);
 
-            // 绘制菱形路径
+            // 绘制菱形路径（判断节点使用菱形）
             using (var path = CreateDiamondPath(bounds))
             {
-                // 填充背景
-                using (var brush = new SolidBrush(BackgroundColor))
+                // 绘制阴影（如果启用）
+                if (EnableShadow)
                 {
-                    g.FillPath(brush, path);
+                    DrawShadow(g, path);
+                }
+
+                // 填充背景（渐变或纯色）
+                if (EnableGradient && GradientStartColor != Color.Empty && GradientEndColor != Color.Empty)
+                {
+                    DrawGradientBackground(g, path, rect);
+                }
+                else
+                {
+                    using (var brush = new SolidBrush(BackgroundColor))
+                    {
+                        g.FillPath(brush, path);
+                    }
                 }
 
                 // 绘制边框
                 var borderColor = IsSelected ? SelectedBorderColor : (IsHovered ? HoverBorderColor : BorderColor);
-                using (var pen = new Pen(borderColor, BorderWidth))
+                var borderWidth = IsSelected ? SelectedBorderWidth : BorderWidth;
+                using (var pen = new Pen(borderColor, borderWidth))
                 {
                     g.DrawPath(pen, path);
                 }
             }
+
+            // 绘制节点图标
+            DrawIcon(g, rect);
 
             // 绘制文本
             var text = Data?.DisplayName ?? Data?.Name ?? "判断";
@@ -71,25 +89,35 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
             {
                 g.DrawString(text, SystemFonts.DefaultFont, brush, bounds, sf);
             }
+
+            // 绘制端口
+            DrawPorts(g);
+
+            // 绘制验证错误图标
+            if (!string.IsNullOrEmpty(ValidationError) || (Data != null && !Data.Valid))
+            {
+                DrawValidationError(g, rect);
+            }
         }
 
         /// <summary>
-        /// 创建菱形路径
+        /// 创建菱形路径（判断节点使用菱形，但保持232x60尺寸）
         /// </summary>
         private GraphicsPath CreateDiamondPath(RectangleF rect)
         {
             var path = new GraphicsPath();
             var centerX = rect.X + rect.Width / 2;
             var centerY = rect.Y + rect.Height / 2;
-            var halfWidth = rect.Width / 2 - BorderWidth;
-            var halfHeight = rect.Height / 2 - BorderWidth;
+            var borderWidth = IsSelected ? SelectedBorderWidth : BorderWidth;
+            var halfWidth = rect.Width / 2 - borderWidth;
+            var halfHeight = rect.Height / 2 - borderWidth;
 
             path.AddPolygon(new[]
             {
-                new PointF(centerX, rect.Y + BorderWidth), // 上
-                new PointF(rect.Right - BorderWidth, centerY), // 右
-                new PointF(centerX, rect.Bottom - BorderWidth), // 下
-                new PointF(rect.X + BorderWidth, centerY) // 左
+                new PointF(centerX, rect.Y + borderWidth), // 上
+                new PointF(rect.Right - borderWidth, centerY), // 右
+                new PointF(centerX, rect.Bottom - borderWidth), // 下
+                new PointF(rect.X + borderWidth, centerY) // 左
             });
             path.CloseFigure();
 

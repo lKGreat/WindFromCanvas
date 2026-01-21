@@ -10,44 +10,26 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
     {
         public ProcessNode() : base()
         {
-            Width = 150f;
+            Width = 232f; // Activepieces标准尺寸
             Height = 60f;
-            BackgroundColor = Color.FromArgb(33, 150, 243); // 蓝色
-            BorderColor = Color.FromArgb(25, 118, 210);
-            TextColor = Color.White;
+            BackgroundColor = Color.FromArgb(255, 255, 255); // 白色背景
+            BorderColor = Color.FromArgb(226, 232, 240); // Activepieces边框色
+            TextColor = Color.FromArgb(15, 23, 42); // Activepieces前景色
             Draggable = true;
+            EnableShadow = true;
         }
 
         public ProcessNode(FlowNodeData data) : base(data)
         {
-            Width = 150f;
+            Width = 232f;
             Height = 60f;
-            BackgroundColor = Color.FromArgb(33, 150, 243);
-            BorderColor = Color.FromArgb(25, 118, 210);
-            TextColor = Color.White;
+            BackgroundColor = Color.FromArgb(255, 255, 255);
+            BorderColor = Color.FromArgb(226, 232, 240);
+            TextColor = Color.FromArgb(15, 23, 42);
             Draggable = true;
+            EnableShadow = true;
         }
 
-        protected override void DrawIcon(Graphics g, RectangleF rect)
-        {
-            // 处理节点图标：绘制一个齿轮或处理图标
-            var iconSize = 24f;
-            var iconRect = new RectangleF(
-                rect.X + 10,
-                rect.Y + (rect.Height - iconSize) / 2,
-                iconSize,
-                iconSize
-            );
-
-            // 绘制一个简单的矩形图标
-            using (var brush = new SolidBrush(Color.White))
-            {
-                g.FillRectangle(brush, iconRect);
-            }
-            using (var pen = new Pen(Color.FromArgb(33, 150, 243), 2))
-            {
-                g.DrawRectangle(pen, iconRect.X, iconRect.Y, iconRect.Width, iconRect.Height);
-            }
-        }
+        // ProcessNode使用基类的DrawIcon方法，会自动加载默认图标
     }
 }

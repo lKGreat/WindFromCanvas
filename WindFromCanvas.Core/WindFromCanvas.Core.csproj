@@ -63,7 +63,10 @@
     <Compile Include="Applications\FlowDesigner\Models\FlowDocument.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowNodeData.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowNodeType.cs" />
+    <Compile Include="Applications\FlowDesigner\Models\NodeStatus.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowConnectionData.cs" />
+    <Compile Include="Applications\FlowDesigner\Themes\ThemeConfig.cs" />
+    <Compile Include="Applications\FlowDesigner\Themes\ThemeManager.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\FlowNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\StartNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\ProcessNode.cs" />
@@ -75,7 +78,11 @@
     <Compile Include="Applications\FlowDesigner\Widgets\ToolboxPanel.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\NodePropertiesPanel.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\FlowContextMenu.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\TooltipControl.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\ShortcutHelpDialog.cs" />
+    <Compile Include="Applications\FlowDesigner\Utils\ShortcutManager.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\NodeAlignmentHelper.cs" />
+    <Compile Include="Applications\FlowDesigner\Utils\IconCache.cs" />
     <Compile Include="Applications\FlowDesigner\Validation\FlowValidator.cs" />
     <Compile Include="Applications\FlowDesigner\Commands\ICommand.cs" />
     <Compile Include="Applications\FlowDesigner\Commands\CommandManager.cs" />

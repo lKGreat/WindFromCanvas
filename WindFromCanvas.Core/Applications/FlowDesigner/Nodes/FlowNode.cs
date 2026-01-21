@@ -19,19 +19,19 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
         public FlowNodeData Data { get; set; }
 
         /// <summary>
-        /// 节点宽度
+        /// 节点宽度（Activepieces标准：232px）
         /// </summary>
-        public virtual float Width { get; set; } = 150f;
+        public virtual float Width { get; set; } = 232f;
 
         /// <summary>
-        /// 节点高度
+        /// 节点高度（Activepieces标准：60px）
         /// </summary>
         public virtual float Height { get; set; } = 60f;
 
         /// <summary>
-        /// 圆角半径
+        /// 圆角半径（Activepieces标准：4px）
         /// </summary>
-        public virtual float CornerRadius { get; set; } = 8f;
+        public virtual float CornerRadius { get; set; } = 4f;
 
         /// <summary>
         /// 是否被选中
@@ -59,19 +59,69 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
         public virtual Color BorderColor { get; set; } = Color.FromArgb(200, 200, 200);
 
         /// <summary>
-        /// 选中时的边框颜色
+        /// 选中时的边框颜色（Activepieces蓝色：#3B82F6）
         /// </summary>
-        public virtual Color SelectedBorderColor { get; set; } = Color.FromArgb(0, 120, 215);
+        public virtual Color SelectedBorderColor { get; set; } = Color.FromArgb(59, 130, 246);
 
         /// <summary>
-        /// 悬停时的边框颜色
+        /// 悬停时的边框颜色（Activepieces ring颜色）
         /// </summary>
-        public virtual Color HoverBorderColor { get; set; } = Color.FromArgb(100, 100, 100);
+        public virtual Color HoverBorderColor { get; set; } = Color.FromArgb(148, 163, 184);
 
         /// <summary>
-        /// 边框宽度
+        /// 边框宽度（默认1px，选中时2px）
         /// </summary>
-        public virtual float BorderWidth { get; set; } = 2f;
+        public virtual float BorderWidth { get; set; } = 1f;
+
+        /// <summary>
+        /// 选中时的边框宽度
+        /// </summary>
+        public virtual float SelectedBorderWidth { get; set; } = 2f;
+
+        /// <summary>
+        /// 是否启用阴影效果
+        /// </summary>
+        public virtual bool EnableShadow { get; set; } = true;
+
+        /// <summary>
+        /// 阴影偏移量
+        /// </summary>
+        public virtual PointF ShadowOffset { get; set; } = new PointF(0, 2);
+
+        /// <summary>
+        /// 阴影模糊半径
+        /// </summary>
+        public virtual float ShadowBlur { get; set; } = 4f;
+
+        /// <summary>
+        /// 阴影颜色
+        /// </summary>
+        public virtual Color ShadowColor { get; set; } = Color.FromArgb(30, 0, 0, 0);
+
+        /// <summary>
+        /// 选中时的阴影颜色（更深）
+        /// </summary>
+        public virtual Color SelectedShadowColor { get; set; } = Color.FromArgb(60, 0, 0, 0);
+
+        /// <summary>
+        /// 是否启用渐变背景
+        /// </summary>
+        public virtual bool EnableGradient { get; set; } = false;
+
+        /// <summary>
+        /// 渐变起始颜色
+        /// </summary>
+        public virtual Color GradientStartColor { get; set; }
+
+        /// <summary>
+        /// 渐变结束颜色
+        /// </summary>
+        public virtual Color GradientEndColor { get; set; }
+
+        /// <summary>
+        /// 渐变方向（0=水平，90=垂直）
+        /// </summary>
+        public virtual float GradientAngle { get; set; } = 90f;
 
         /// <summary>
         /// 文本颜色
@@ -118,18 +168,32 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
             var bounds = GetBounds();
             var rect = new RectangleF(X, Y, Width, Height);
 
-            // 绘制圆角矩形背景
+            // 创建圆角矩形路径
             using (var path = CreateRoundedRectangle(rect, CornerRadius))
             {
-                // 填充背景
-                using (var brush = new SolidBrush(BackgroundColor))
+                // 绘制阴影（如果启用）
+                if (EnableShadow)
                 {
-                    g.FillPath(brush, path);
+                    DrawShadow(g, path);
+                }
+
+                // 填充背景（渐变或纯色）
+                if (EnableGradient && GradientStartColor != Color.Empty && GradientEndColor != Color.Empty)
+                {
+                    DrawGradientBackground(g, path, rect);
+                }
+                else
+                {
+                    using (var brush = new SolidBrush(BackgroundColor))
+                    {
+                        g.FillPath(brush, path);
+                    }
                 }
 
                 // 绘制边框
                 var borderColor = IsSelected ? SelectedBorderColor : (IsHovered ? HoverBorderColor : BorderColor);
-                using (var pen = new Pen(borderColor, BorderWidth))
+                var borderWidth = IsSelected ? SelectedBorderWidth : BorderWidth;
+                using (var pen = new Pen(borderColor, borderWidth))
                 {
                     g.DrawPath(pen, path);
                 }
@@ -148,6 +212,177 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
             if (!string.IsNullOrEmpty(ValidationError) || (Data != null && !Data.Valid))
             {
                 DrawValidationError(g, rect);
+            }
+
+            // 绘制状态指示器（右上角）
+            if (Data != null && Data.Status != NodeStatus.None)
+            {
+                DrawStatusIndicator(g, rect);
+            }
+        }
+
+        /// <summary>
+        /// 绘制状态指示器（右上角）
+        /// </summary>
+        protected virtual void DrawStatusIndicator(Graphics g, RectangleF rect)
+        {
+            if (Data == null || Data.Status == NodeStatus.None)
+                return;
+
+            var statusIconSize = 16f;
+            var statusRect = new RectangleF(
+                rect.Right - statusIconSize - 5,
+                rect.Top + 5,
+                statusIconSize,
+                statusIconSize
+            );
+
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            switch (Data.Status)
+            {
+                case NodeStatus.Running:
+                    DrawRunningIndicator(g, statusRect);
+                    break;
+                case NodeStatus.Success:
+                    DrawSuccessIndicator(g, statusRect);
+                    break;
+                case NodeStatus.Failed:
+                    DrawFailedIndicator(g, statusRect);
+                    break;
+                case NodeStatus.Skipped:
+                    DrawSkippedIndicator(g, statusRect);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 绘制运行中指示器（蓝色旋转圆圈）
+        /// </summary>
+        protected virtual void DrawRunningIndicator(Graphics g, RectangleF rect)
+        {
+            // 绘制旋转的圆圈（使用动画角度，这里先绘制静态版本）
+            using (var pen = new Pen(Color.FromArgb(59, 130, 246), 2f))
+            {
+                // 绘制圆弧（模拟旋转）
+                var startAngle = (float)(System.DateTime.Now.Millisecond % 1000) / 1000f * 360f;
+                g.DrawArc(pen, rect.X, rect.Y, rect.Width, rect.Height, startAngle, 270);
+            }
+        }
+
+        /// <summary>
+        /// 绘制成功指示器（绿色对勾）
+        /// </summary>
+        protected virtual void DrawSuccessIndicator(Graphics g, RectangleF rect)
+        {
+            using (var brush = new SolidBrush(Color.FromArgb(16, 185, 129))) // Activepieces绿色
+            {
+                g.FillEllipse(brush, rect);
+            }
+            using (var pen = new Pen(Color.White, 2f))
+            {
+                // 绘制对勾
+                var centerX = rect.X + rect.Width / 2;
+                var centerY = rect.Y + rect.Height / 2;
+                var checkSize = rect.Width * 0.4f;
+                g.DrawLine(pen, 
+                    centerX - checkSize * 0.3f, centerY,
+                    centerX - checkSize * 0.1f, centerY + checkSize * 0.3f);
+                g.DrawLine(pen,
+                    centerX - checkSize * 0.1f, centerY + checkSize * 0.3f,
+                    centerX + checkSize * 0.4f, centerY - checkSize * 0.2f);
+            }
+        }
+
+        /// <summary>
+        /// 绘制失败指示器（红色叉号）
+        /// </summary>
+        protected virtual void DrawFailedIndicator(Graphics g, RectangleF rect)
+        {
+            using (var brush = new SolidBrush(Color.FromArgb(239, 68, 68))) // Activepieces红色
+            {
+                g.FillEllipse(brush, rect);
+            }
+            using (var pen = new Pen(Color.White, 2f))
+            {
+                // 绘制叉号
+                var margin = rect.Width * 0.25f;
+                g.DrawLine(pen, 
+                    rect.X + margin, rect.Y + margin,
+                    rect.Right - margin, rect.Bottom - margin);
+                g.DrawLine(pen,
+                    rect.Right - margin, rect.Y + margin,
+                    rect.X + margin, rect.Bottom - margin);
+            }
+        }
+
+        /// <summary>
+        /// 绘制跳过指示器（灰色斜杠）
+        /// </summary>
+        protected virtual void DrawSkippedIndicator(Graphics g, RectangleF rect)
+        {
+            using (var brush = new SolidBrush(Color.FromArgb(148, 163, 184))) // Activepieces灰色
+            {
+                g.FillEllipse(brush, rect);
+            }
+            using (var pen = new Pen(Color.White, 2f))
+            {
+                // 绘制斜杠
+                var margin = rect.Width * 0.25f;
+                g.DrawLine(pen,
+                    rect.X + margin, rect.Y + margin,
+                    rect.Right - margin, rect.Bottom - margin);
+            }
+        }
+
+        /// <summary>
+        /// 绘制阴影效果（使用路径偏移和透明度模拟）
+        /// </summary>
+        protected virtual void DrawShadow(Graphics g, GraphicsPath path)
+        {
+            var shadowColor = IsSelected ? SelectedShadowColor : ShadowColor;
+            
+            // 使用GraphicsPath创建阴影效果
+            // 由于GDI+不支持真正的模糊阴影，我们使用多层半透明路径来模拟
+            using (var shadowPath = (GraphicsPath)path.Clone())
+            {
+                // 应用偏移变换
+                using (var matrix = new System.Drawing.Drawing2D.Matrix(1, 0, 0, 1, ShadowOffset.X, ShadowOffset.Y))
+                {
+                    shadowPath.Transform(matrix);
+                }
+                
+                // 绘制多层阴影以模拟模糊效果
+                for (int i = 0; i < 3; i++)
+                {
+                    var alpha = (int)(shadowColor.A * (1.0f - i * 0.3f));
+                    if (alpha <= 0) break;
+                    
+                    var offset = i * 0.8f;
+                    using (var tempPath = (GraphicsPath)shadowPath.Clone())
+                    {
+                        using (var matrix = new System.Drawing.Drawing2D.Matrix(1, 0, 0, 1, offset, offset))
+                        {
+                            tempPath.Transform(matrix);
+                        }
+                        
+                        using (var brush = new SolidBrush(Color.FromArgb(alpha, shadowColor.R, shadowColor.G, shadowColor.B)))
+                        {
+                            g.FillPath(brush, tempPath);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 绘制渐变背景
+        /// </summary>
+        protected virtual void DrawGradientBackground(Graphics g, GraphicsPath path, RectangleF rect)
+        {
+            using (var brush = new LinearGradientBrush(rect, GradientStartColor, GradientEndColor, GradientAngle))
+            {
+                g.FillPath(brush, path);
             }
         }
 
@@ -271,8 +506,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
         /// </summary>
         protected virtual void DrawIcon(Graphics g, RectangleF rect)
         {
-            // 占位：绘制一个小矩形作为图标
-            var iconSize = 20f;
+            var iconSize = 24f; // Activepieces标准图标尺寸
             var iconRect = new RectangleF(
                 rect.X + 10,
                 rect.Y + (rect.Height - iconSize) / 2,
@@ -280,9 +514,76 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
                 iconSize
             );
 
-            using (var brush = new SolidBrush(Color.Gray))
+            Image icon = null;
+
+            // 优先使用Data中指定的图标
+            if (Data != null && !string.IsNullOrEmpty(Data.IconPath))
             {
-                g.FillRectangle(brush, iconRect);
+                icon = Utils.IconCache.Instance.GetIcon(Data.IconPath, Data.IconType, new Size((int)iconSize, (int)iconSize));
+            }
+
+            // 如果没有指定图标，使用默认图标
+            if (icon == null && Data != null)
+            {
+                icon = Utils.IconCache.Instance.GetDefaultIcon(Data.Type.ToString(), new Size((int)iconSize, (int)iconSize));
+            }
+
+            // 如果还是没有，绘制占位图标
+            if (icon == null)
+            {
+                DrawPlaceholderIcon(g, iconRect);
+            }
+            else
+            {
+                // 绘制图标（带圆角边框和背景，类似Activepieces）
+                DrawIconWithBackground(g, icon, iconRect);
+            }
+        }
+
+        /// <summary>
+        /// 绘制带背景的图标（Activepieces风格）
+        /// </summary>
+        protected virtual void DrawIconWithBackground(Graphics g, Image icon, RectangleF iconRect)
+        {
+            // 绘制图标背景（圆角矩形，浅灰色）
+            using (var bgPath = CreateRoundedRectangle(iconRect, 4f))
+            {
+                using (var bgBrush = new SolidBrush(Color.FromArgb(248, 250, 252)))
+                {
+                    g.FillPath(bgBrush, bgPath);
+                }
+                using (var bgPen = new Pen(Color.FromArgb(226, 232, 240), 1f))
+                {
+                    g.DrawPath(bgPen, bgPath);
+                }
+            }
+
+            // 绘制图标（居中）
+            var iconDrawRect = new RectangleF(
+                iconRect.X + (iconRect.Width - icon.Width) / 2,
+                iconRect.Y + (iconRect.Height - icon.Height) / 2,
+                icon.Width,
+                icon.Height
+            );
+            g.DrawImage(icon, iconDrawRect);
+        }
+
+        /// <summary>
+        /// 绘制占位图标
+        /// </summary>
+        protected virtual void DrawPlaceholderIcon(Graphics g, RectangleF iconRect)
+        {
+            // 绘制占位矩形
+            using (var bgPath = CreateRoundedRectangle(iconRect, 4f))
+            {
+                using (var bgBrush = new SolidBrush(Color.FromArgb(248, 250, 252)))
+                {
+                    g.FillPath(bgBrush, bgPath);
+                }
+                using (var bgPen = new Pen(Color.FromArgb(226, 232, 240), 1f))
+                {
+                    g.DrawPath(bgPen, bgPath);
+                }
             }
         }
 

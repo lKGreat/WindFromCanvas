@@ -79,6 +79,24 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Models
         [DataMember]
         public string Description { get; set; }
 
+        /// <summary>
+        /// 节点图标路径（支持PNG、SVG、Font图标）
+        /// </summary>
+        [DataMember]
+        public string IconPath { get; set; }
+
+        /// <summary>
+        /// 节点图标类型（Image、Svg、Font）
+        /// </summary>
+        [DataMember]
+        public string IconType { get; set; }
+
+        /// <summary>
+        /// 节点状态
+        /// </summary>
+        [DataMember]
+        public NodeStatus Status { get; set; } = NodeStatus.None;
+
         public FlowNodeData()
         {
             Settings = new Dictionary<string, object>();

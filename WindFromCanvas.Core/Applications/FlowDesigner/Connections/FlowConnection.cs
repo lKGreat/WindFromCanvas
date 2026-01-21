@@ -34,19 +34,54 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         public bool IsLoopReturn { get; set; }
 
         /// <summary>
-        /// 连接线颜色
+        /// 连接线颜色（Activepieces标准）
         /// </summary>
-        public Color LineColor { get; set; } = Color.FromArgb(150, 150, 150);
+        public Color LineColor { get; set; } = Color.FromArgb(148, 163, 184);
 
         /// <summary>
-        /// 连接线宽度
+        /// 连接线宽度（Activepieces标准：1.5px）
         /// </summary>
-        public float LineWidth { get; set; } = 2f;
+        public float LineWidth { get; set; } = 1.5f;
 
         /// <summary>
         /// 箭头大小
         /// </summary>
-        public float ArrowSize { get; set; } = 8f;
+        public float ArrowSize { get; set; } = 6f;
+
+        /// <summary>
+        /// 圆角半径（Activepieces ARC_LENGTH：15px）
+        /// </summary>
+        public float ArcLength { get; set; } = 15f;
+
+        /// <summary>
+        /// 是否为虚线（用于跳过的连接）
+        /// </summary>
+        public bool IsDashed { get; set; } = false;
+
+        /// <summary>
+        /// 悬停时的连接线颜色
+        /// </summary>
+        public Color HoverLineColor { get; set; } = Color.FromArgb(59, 130, 246);
+
+        /// <summary>
+        /// 选中时的连接线颜色
+        /// </summary>
+        public Color SelectedLineColor { get; set; } = Color.FromArgb(59, 130, 246);
+
+        /// <summary>
+        /// 是否显示添加按钮（连接线中点）
+        /// </summary>
+        public bool ShowAddButton { get; set; } = true;
+
+        /// <summary>
+        /// 添加按钮大小（Activepieces标准：20x20）
+        /// </summary>
+        public float AddButtonSize { get; set; } = 20f;
+
+        /// <summary>
+        /// 添加按钮是否悬停
+        /// </summary>
+        public bool IsAddButtonHovered { get; set; }
 
         /// <summary>
         /// 是否被选中
@@ -75,58 +110,224 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         {
             if (!Visible || SourceNode == null || TargetNode == null) return;
 
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
             var startPoint = GetConnectionPoint(SourceNode, true);
             var endPoint = GetConnectionPoint(TargetNode, false);
 
             if (startPoint.IsEmpty || endPoint.IsEmpty) return;
 
-            // 绘制连接线
-            var color = IsSelected ? Color.FromArgb(0, 120, 215) : 
-                       (IsHovered ? Color.FromArgb(100, 100, 100) : LineColor);
+            // 确定连接线颜色
+            var color = IsSelected ? SelectedLineColor : 
+                       (IsHovered ? HoverLineColor : LineColor);
             
-            if (IsLoopReturn)
-            {
-                // 循环返回连接：绘制曲线
-                DrawLoopReturnLine(g, startPoint, endPoint, color);
-            }
-            else
-            {
-                // 普通连接：绘制直线
-                using (var pen = new Pen(color, LineWidth))
-                {
-                    pen.EndCap = LineCap.Round;
-                    pen.StartCap = LineCap.Round;
-                    g.DrawLine(pen, startPoint, endPoint);
-                }
-            }
-
-            // 绘制箭头
-            DrawArrow(g, startPoint, endPoint, color);
-        }
-
-        /// <summary>
-        /// 绘制循环返回线（曲线）
-        /// </summary>
-        private void DrawLoopReturnLine(Graphics g, PointF start, PointF end, Color color)
-        {
+            // 创建画笔
             using (var pen = new Pen(color, LineWidth))
             {
                 pen.EndCap = LineCap.Round;
                 pen.StartCap = LineCap.Round;
-
-                // 计算控制点，创建曲线
-                var dx = end.X - start.X;
-                var dy = end.Y - start.Y;
-                var controlOffset = Math.Max(50, Math.Abs(dy) * 0.5f);
-
-                var controlPoint1 = new PointF(start.X, start.Y + controlOffset);
-                var controlPoint2 = new PointF(end.X, end.Y - controlOffset);
-
-                using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+                
+                // 如果是虚线，设置虚线样式
+                if (IsDashed)
                 {
-                    path.AddBezier(start, controlPoint1, controlPoint2, end);
+                    pen.DashStyle = DashStyle.Dash;
+                    pen.DashPattern = new float[] { 4f, 4f };
+                }
+
+                if (IsLoopReturn)
+                {
+                    // 循环返回连接：绘制带圆角的曲线
+                    DrawLoopReturnLine(g, startPoint, endPoint, pen);
+                }
+                else
+                {
+                    // 普通连接：绘制直线（带圆角转角）
+                    DrawStraightLine(g, startPoint, endPoint, pen);
+                }
+            }
+
+            // 绘制箭头（只在非虚线时绘制）
+            if (!IsDashed)
+            {
+                DrawArrow(g, startPoint, endPoint, color);
+            }
+
+            // 绘制添加按钮（连接线中点）
+            if (ShowAddButton && !IsLoopReturn)
+            {
+                DrawAddButton(g, startPoint, endPoint);
+            }
+        }
+
+        /// <summary>
+        /// 绘制添加按钮（连接线中点，Activepieces风格）
+        /// </summary>
+        private void DrawAddButton(Graphics g, PointF start, PointF end)
+        {
+            // 计算中点
+            var midPoint = new PointF((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+            var buttonRect = new RectangleF(
+                midPoint.X - AddButtonSize / 2,
+                midPoint.Y - AddButtonSize / 2,
+                AddButtonSize,
+                AddButtonSize
+            );
+
+            // 悬停时放大1.2倍
+            if (IsAddButtonHovered)
+            {
+                var scale = 1.2f;
+                buttonRect = new RectangleF(
+                    midPoint.X - AddButtonSize * scale / 2,
+                    midPoint.Y - AddButtonSize * scale / 2,
+                    AddButtonSize * scale,
+                    AddButtonSize * scale
+                );
+            }
+
+            // 绘制按钮背景（圆形，白色）
+            using (var brush = new SolidBrush(Color.White))
+            {
+                g.FillEllipse(brush, buttonRect);
+            }
+
+            // 绘制边框
+            var borderColor = IsAddButtonHovered ? Color.FromArgb(59, 130, 246) : Color.FromArgb(226, 232, 240);
+            using (var pen = new Pen(borderColor, 1.5f))
+            {
+                g.DrawEllipse(pen, buttonRect);
+            }
+
+            // 绘制+号
+            using (var pen = new Pen(borderColor, 2f))
+            {
+                var centerX = buttonRect.X + buttonRect.Width / 2;
+                var centerY = buttonRect.Y + buttonRect.Height / 2;
+                var crossSize = buttonRect.Width * 0.3f;
+                
+                // 横线
+                g.DrawLine(pen, 
+                    centerX - crossSize / 2, centerY,
+                    centerX + crossSize / 2, centerY);
+                // 竖线
+                g.DrawLine(pen,
+                    centerX, centerY - crossSize / 2,
+                    centerX, centerY + crossSize / 2);
+            }
+        }
+
+        /// <summary>
+        /// 检测添加按钮点击
+        /// </summary>
+        public bool HitTestAddButton(PointF point)
+        {
+            if (!ShowAddButton || SourceNode == null || TargetNode == null || IsLoopReturn)
+                return false;
+
+            var startPoint = GetConnectionPoint(SourceNode, true);
+            var endPoint = GetConnectionPoint(TargetNode, false);
+            var midPoint = new PointF((startPoint.X + endPoint.X) / 2, (startPoint.Y + endPoint.Y) / 2);
+            
+            var buttonSize = IsAddButtonHovered ? AddButtonSize * 1.2f : AddButtonSize;
+            var dx = point.X - midPoint.X;
+            var dy = point.Y - midPoint.Y;
+            var distanceSquared = dx * dx + dy * dy;
+            
+            return distanceSquared <= (buttonSize / 2) * (buttonSize / 2);
+        }
+
+        /// <summary>
+        /// 绘制直线连接（带圆角转角）
+        /// </summary>
+        private void DrawStraightLine(Graphics g, PointF start, PointF end, Pen pen)
+        {
+            // 如果连接是垂直的，直接绘制直线
+            if (Math.Abs(start.X - end.X) < 1)
+            {
+                g.DrawLine(pen, start, end);
+                return;
+            }
+
+            // 水平连接：添加圆角转角
+            var midY = (start.Y + end.Y) / 2;
+            var verticalSpace = Math.Abs(end.Y - start.Y);
+            
+            if (verticalSpace > ArcLength * 2)
+            {
+                // 使用圆角路径
+                using (var path = new GraphicsPath())
+                {
+                    // 从起点向下
+                    path.AddLine(start, new PointF(start.X, start.Y + ArcLength));
+                    
+                    // 圆角转角
+                    path.AddArc(start.X - ArcLength, start.Y + ArcLength - ArcLength, 
+                        ArcLength * 2, ArcLength * 2, 90, 90);
+                    
+                    // 水平线
+                    path.AddLine(new PointF(start.X + ArcLength, start.Y + ArcLength), 
+                        new PointF(end.X - ArcLength, end.Y - ArcLength));
+                    
+                    // 圆角转角
+                    path.AddArc(end.X - ArcLength, end.Y - ArcLength - ArcLength, 
+                        ArcLength * 2, ArcLength * 2, 0, 90);
+                    
+                    // 到终点
+                    path.AddLine(new PointF(end.X, end.Y - ArcLength), end);
+                    
                     g.DrawPath(pen, path);
                 }
+            }
+            else
+            {
+                // 距离太近，直接绘制直线
+                g.DrawLine(pen, start, end);
+            }
+        }
+
+        /// <summary>
+        /// 绘制循环返回线（带圆角的曲线，参考Activepieces实现）
+        /// </summary>
+        private void DrawLoopReturnLine(Graphics g, PointF start, PointF end, Pen pen)
+        {
+            // 参考Activepieces的loop-return-edge实现
+            // 使用多段圆弧和直线创建循环返回路径
+            
+            var horizontalLineLength = Math.Abs(start.X - end.X) - 2 * ArcLength;
+            var verticalLineLength = Math.Abs(end.Y - start.Y);
+            
+            using (var path = new GraphicsPath())
+            {
+                // 从起点向上
+                var lineStartY = start.Y - 7; // VERTICAL_SPACE_BETWEEN_STEP_AND_LINE
+                path.AddLine(start.X, start.Y, start.X, lineStartY);
+                
+                // 左下方圆弧
+                path.AddArc(start.X - ArcLength * 2, lineStartY, ArcLength * 2, ArcLength * 2, 180, 90);
+                
+                // 水平线（向左）
+                path.AddLine(new PointF(start.X - ArcLength, lineStartY + ArcLength),
+                    new PointF(start.X - horizontalLineLength - ArcLength, lineStartY + ArcLength));
+                
+                // 右上方圆弧
+                path.AddArc(start.X - horizontalLineLength - ArcLength * 2, 
+                    lineStartY + ArcLength - verticalLineLength, 
+                    ArcLength * 2, ArcLength * 2, 270, 90);
+                
+                // 向上到循环起点
+                path.AddLine(new PointF(start.X - horizontalLineLength / 2 - ArcLength, 
+                    lineStartY + ArcLength - verticalLineLength),
+                    new PointF(start.X - horizontalLineLength / 2 - ArcLength, 
+                    start.Y + 7 + ArcLength / 2));
+                
+                // 向下到终点
+                var endLineLength = 60 - 2 * 7 + 8; // VERTICAL_SPACE_BETWEEN_STEPS
+                path.AddLine(new PointF(start.X - horizontalLineLength / 2 - ArcLength,
+                    start.Y + 7 + ArcLength / 2),
+                    new PointF(start.X - horizontalLineLength / 2 - ArcLength,
+                    start.Y + 7 + ArcLength / 2 + endLineLength));
+                
+                g.DrawPath(pen, path);
             }
         }
 
@@ -151,7 +352,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         }
 
         /// <summary>
-        /// 绘制箭头
+        /// 绘制箭头（Activepieces风格：更清晰的三角形）
         /// </summary>
         private void DrawArrow(Graphics g, PointF start, PointF end, Color color)
         {
@@ -172,17 +373,19 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
                 end.Y - ny * (TargetNode.Height / 2 + 5)
             );
 
-            // 箭头两边的点
+            // 箭头两边的点（Activepieces风格：更小的角度）
+            var arrowAngle = 0.5f; // 箭头角度（弧度）
+            var sinAngle = (float)Math.Sin(arrowAngle);
             var arrowLeft = new PointF(
-                arrowTip.X - ArrowSize * nx - ArrowSize * ny,
-                arrowTip.Y - ArrowSize * ny + ArrowSize * nx
+                arrowTip.X - ArrowSize * nx - ArrowSize * sinAngle * ny,
+                arrowTip.Y - ArrowSize * ny + ArrowSize * sinAngle * nx
             );
             var arrowRight = new PointF(
-                arrowTip.X - ArrowSize * nx + ArrowSize * ny,
-                arrowTip.Y - ArrowSize * ny - ArrowSize * nx
+                arrowTip.X - ArrowSize * nx + ArrowSize * sinAngle * ny,
+                arrowTip.Y - ArrowSize * ny - ArrowSize * sinAngle * nx
             );
 
-            // 绘制箭头
+            // 绘制箭头（填充三角形）
             using (var brush = new SolidBrush(color))
             {
                 var points = new[] { arrowTip, arrowLeft, arrowRight };
