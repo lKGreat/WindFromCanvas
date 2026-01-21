@@ -75,6 +75,10 @@
     <Compile Include="Applications\FlowDesigner\Nodes\LoopNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\EndNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\NoteNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Nodes\RouterNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Connections\RouterConnection.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\NoteEditor.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\NoteToolbar.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\FlowConnection.cs" />
     <Compile Include="Applications\FlowDesigner\FlowDesignerCanvas.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\ToolboxPanel.cs" />
@@ -87,6 +91,9 @@
     <Compile Include="Applications\FlowDesigner\Widgets\NodeSelectorDialog.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\ToastNotification.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\ShortcutManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Utils\RecentNodesTracker.cs" />
+    <Compile Include="Applications\FlowDesigner\Templates\NodeTemplate.cs" />
+    <Compile Include="Applications\FlowDesigner\Templates\TemplateManager.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\NodeAlignmentHelper.cs" />
     <Compile Include="Applications\FlowDesigner\Utils\IconCache.cs" />
     <Compile Include="Applications\FlowDesigner\Validation\FlowValidator.cs" />

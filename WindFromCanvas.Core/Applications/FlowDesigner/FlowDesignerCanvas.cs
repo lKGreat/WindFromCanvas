@@ -55,6 +55,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         private FlowNode _draggingNode;
 
         /// <summary>
+        /// 拖拽预览位置
+        /// </summary>
+        private PointF _dragPreviewPosition = PointF.Empty;
+
+        /// <summary>
+        /// 多选拖拽的节点列表
+        /// </summary>
+        private List<FlowNode> _draggingNodes = new List<FlowNode>();
+
+        /// <summary>
         /// 是否正在框选
         /// </summary>
         private bool _isSelecting;
@@ -187,6 +197,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             this.KeyUp += FlowDesignerCanvas_KeyUp;
             this.MouseWheel += FlowDesignerCanvas_MouseWheel;
             this.MouseClick += FlowDesignerCanvas_MouseClick;
+            this.MouseDoubleClick += FlowDesignerCanvas_MouseDoubleClick;
             this.SetStyle(ControlStyles.Selectable, true);
             this.TabStop = true;
 
@@ -467,6 +478,18 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     }
 
                     _draggingNode = hitNode;
+                    _dragPreviewPosition = e.Location;
+                    
+                    // 如果当前节点已选中，检查是否多选拖拽
+                    if (_selectedNodes.Contains(hitNode) && _selectedNodes.Count > 1)
+                    {
+                        _draggingNodes = new List<FlowNode>(_selectedNodes);
+                    }
+                    else
+                    {
+                        _draggingNodes.Clear();
+                        _draggingNodes.Add(hitNode);
+                    }
                 }
                 else
                 {
@@ -496,6 +519,12 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             else if (_isCreatingConnection && _connectionSourceNode != null)
             {
                 _connectionPreviewEnd = e.Location;
+                Invalidate();
+            }
+            else if (_draggingNode != null)
+            {
+                // 更新拖拽预览位置
+                _dragPreviewPosition = e.Location;
                 Invalidate();
             }
         }
@@ -564,7 +593,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 new SizeF(screenRect.Width / ZoomFactor, screenRect.Height / ZoomFactor)
             );
 
-            bool addToSelection = (Control.ModifierKeys & Keys.Control) != 0;
+            // 支持Ctrl和Shift追加选择（参考Activepieces）
+            bool addToSelection = (Control.ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
             if (!addToSelection)
             {
                 ClearSelection();
@@ -573,7 +603,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             foreach (var node in _nodes.Values)
             {
                 var bounds = node.GetBounds();
-                if (worldRect.IntersectsWith(bounds))
+                // 智能框选：部分包含也算（参考Activepieces）
+                if (worldRect.IntersectsWith(bounds) || worldRect.Contains(bounds))
                 {
                     SelectNode(node, true);
                 }
@@ -694,7 +725,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             // 重置变换
             g.ResetTransform();
 
-            // 绘制框选矩形
+            // 绘制框选矩形（优化视觉，参考Activepieces）
             if (_isSelecting)
             {
                 var rect = new RectangleF(
@@ -704,15 +735,49 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     Math.Abs(_selectionEnd.Y - _selectionStart.Y)
                 );
 
-                using (var brush = new SolidBrush(Color.FromArgb(50, 0, 120, 215)))
+                // 半透明蓝色背景（Activepieces风格）
+                using (var brush = new SolidBrush(Color.FromArgb(30, 59, 130, 246)))
                 {
                     g.FillRectangle(brush, rect);
                 }
-                using (var pen = new Pen(Color.FromArgb(0, 120, 215), 1))
+                
+                // 高亮候选节点
+                var worldRect = new RectangleF(
+                    ScreenToWorld(new PointF(rect.X, rect.Y)),
+                    new SizeF(rect.Width / ZoomFactor, rect.Height / ZoomFactor)
+                );
+                
+                foreach (var node in _nodes.Values)
+                {
+                    var bounds = node.GetBounds();
+                    if (worldRect.IntersectsWith(bounds) || worldRect.Contains(bounds))
+                    {
+                        // 绘制节点高亮边框
+                        var screenBounds = new RectangleF(
+                            bounds.X * ZoomFactor + PanOffset.X,
+                            bounds.Y * ZoomFactor + PanOffset.Y,
+                            bounds.Width * ZoomFactor,
+                            bounds.Height * ZoomFactor
+                        );
+                        using (var pen = new Pen(Color.FromArgb(100, 59, 130, 246), 2f))
+                        {
+                            g.DrawRectangle(pen, screenBounds.X, screenBounds.Y, screenBounds.Width, screenBounds.Height);
+                        }
+                    }
+                }
+
+                // 绘制框选边框
+                using (var pen = new Pen(Color.FromArgb(59, 130, 246), 1.5f))
                 {
                     pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
                     g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
                 }
+            }
+
+            // 绘制拖拽预览（半透明预览层）
+            if (_draggingNode != null && _draggingNodes.Count > 0)
+            {
+                DrawDragPreview(g, _draggingNodes, _dragPreviewPosition);
             }
 
             // 绘制连接预览线
@@ -1412,6 +1477,212 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             var bitmap = ExportToImage();
             bitmap.Save(filePath, System.Drawing.Imaging.ImageFormat.Png);
             bitmap.Dispose();
+        }
+
+        /// <summary>
+        /// 绘制拖拽预览（半透明预览层，参考Activepieces）
+        /// </summary>
+        private void DrawDragPreview(Graphics g, List<FlowNode> nodes, PointF mousePosition)
+        {
+            if (nodes.Count == 0) return;
+
+            // 计算第一个节点的偏移量
+            var firstNode = nodes[0];
+            var offsetX = mousePosition.X - (firstNode.X * ZoomFactor + PanOffset.X);
+            var offsetY = mousePosition.Y - (firstNode.Y * ZoomFactor + PanOffset.Y);
+
+            foreach (var node in nodes)
+            {
+                var bounds = node.GetBounds();
+                var previewRect = new RectangleF(
+                    bounds.X * ZoomFactor + PanOffset.X + offsetX - bounds.Width * ZoomFactor / 2,
+                    bounds.Y * ZoomFactor + PanOffset.Y + offsetY - bounds.Height * ZoomFactor / 2,
+                    bounds.Width * ZoomFactor,
+                    bounds.Height * ZoomFactor
+                );
+
+                // 绘制半透明预览（75x75px，参考Activepieces）
+                var previewSize = 75f;
+                var centerRect = new RectangleF(
+                    previewRect.X + (previewRect.Width - previewSize) / 2,
+                    previewRect.Y + (previewRect.Height - previewSize) / 2,
+                    previewSize,
+                    previewSize
+                );
+
+                // 绘制半透明背景
+                using (var brush = new SolidBrush(Color.FromArgb(180, 255, 255, 255)))
+                {
+                    g.FillRectangle(brush, centerRect);
+                }
+
+                // 绘制边框
+                using (var pen = new Pen(Color.FromArgb(200, 59, 130, 246), 2f))
+                {
+                    g.DrawRectangle(pen, centerRect.X, centerRect.Y, centerRect.Width, centerRect.Height);
+                }
+
+                // 如果是多选，显示数量徽章
+                if (nodes.Count > 1)
+                {
+                    var badgeRect = new RectangleF(
+                        centerRect.Right - 20,
+                        centerRect.Top - 10,
+                        25,
+                        25
+                    );
+                    using (var brush = new SolidBrush(Color.FromArgb(59, 130, 246)))
+                    {
+                        g.FillEllipse(brush, badgeRect);
+                    }
+                    using (var brush = new SolidBrush(Color.White))
+                    using (var sf = new StringFormat
+                    {
+                        Alignment = StringAlignment.Center,
+                        LineAlignment = StringAlignment.Center
+                    })
+                    {
+                        g.DrawString(nodes.Count.ToString(), SystemFonts.DefaultFont, brush, badgeRect, sf);
+                    }
+                }
+                else
+                {
+                    // 单节点预览：显示节点图标（简化）
+                    var iconSize = 30f;
+                    var iconRect = new RectangleF(
+                        centerRect.X + (centerRect.Width - iconSize) / 2,
+                        centerRect.Y + (centerRect.Height - iconSize) / 2,
+                        iconSize,
+                        iconSize
+                    );
+                    using (var brush = new SolidBrush(Color.FromArgb(59, 130, 246)))
+                    {
+                        g.FillRectangle(brush, iconRect);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 处理鼠标双击事件（节点编辑）
+        /// </summary>
+        private void FlowDesignerCanvas_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                var worldPoint = ScreenToWorld(e.Location);
+                var hitNode = HitTestNode(worldPoint);
+                
+                if (hitNode != null && hitNode.Data != null)
+                {
+                    // 双击节点进入编辑模式
+                    StartNodeNameEdit(hitNode);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 当前正在编辑的节点
+        /// </summary>
+        private FlowNode _editingNode;
+        private TextBox _nodeNameEditor;
+
+        /// <summary>
+        /// 开始编辑节点名称
+        /// </summary>
+        private void StartNodeNameEdit(FlowNode node)
+        {
+            if (node == null || node.Data == null) return;
+
+            _editingNode = node;
+            var bounds = node.GetBounds();
+            var screenBounds = new RectangleF(
+                bounds.X * ZoomFactor + PanOffset.X,
+                bounds.Y * ZoomFactor + PanOffset.Y,
+                bounds.Width * ZoomFactor,
+                bounds.Height * ZoomFactor
+            );
+
+            // 创建内嵌文本框
+            _nodeNameEditor = new TextBox
+            {
+                Text = node.Data.DisplayName ?? node.Data.Name ?? "",
+                Location = new Point((int)screenBounds.X + 40, (int)screenBounds.Y + 5),
+                Size = new Size((int)screenBounds.Width - 50, (int)screenBounds.Height - 10),
+                Font = SystemFonts.DefaultFont,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            _nodeNameEditor.KeyDown += NodeNameEditor_KeyDown;
+            _nodeNameEditor.LostFocus += NodeNameEditor_LostFocus;
+            _nodeNameEditor.SelectAll();
+
+            this.Controls.Add(_nodeNameEditor);
+            _nodeNameEditor.Focus();
+        }
+
+        private void NodeNameEditor_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                FinishNodeNameEdit();
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                CancelNodeNameEdit();
+            }
+        }
+
+        private void NodeNameEditor_LostFocus(object sender, EventArgs e)
+        {
+            FinishNodeNameEdit();
+        }
+
+        private void FinishNodeNameEdit()
+        {
+            if (_editingNode != null && _nodeNameEditor != null)
+            {
+                var newName = _nodeNameEditor.Text.Trim();
+                
+                // 验证名称唯一性
+                if (!string.IsNullOrEmpty(newName) && IsNodeNameUnique(newName, _editingNode))
+                {
+                    _editingNode.Data.DisplayName = newName;
+                    if (string.IsNullOrEmpty(_editingNode.Data.Name))
+                    {
+                        _editingNode.Data.Name = newName;
+                    }
+                }
+
+                CancelNodeNameEdit();
+            }
+        }
+
+        private void CancelNodeNameEdit()
+        {
+            if (_nodeNameEditor != null)
+            {
+                this.Controls.Remove(_nodeNameEditor);
+                _nodeNameEditor.Dispose();
+                _nodeNameEditor = null;
+            }
+            _editingNode = null;
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 检查节点名称是否唯一
+        /// </summary>
+        private bool IsNodeNameUnique(string name, FlowNode excludeNode)
+        {
+            foreach (var node in _nodes.Values)
+            {
+                if (node != excludeNode && 
+                    (node.Data.Name == name || node.Data.DisplayName == name))
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>

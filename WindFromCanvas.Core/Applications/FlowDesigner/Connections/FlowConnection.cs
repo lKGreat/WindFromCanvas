@@ -381,7 +381,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         /// <summary>
         /// 获取连接点（节点边缘的中点）
         /// </summary>
-        private PointF GetConnectionPoint(FlowNode node, bool isSource)
+        protected PointF GetConnectionPoint(FlowNode node, bool isSource)
         {
             if (node == null) return PointF.Empty;
 
@@ -401,7 +401,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Connections
         /// <summary>
         /// 绘制箭头（Activepieces风格：更清晰的三角形）
         /// </summary>
-        private void DrawArrow(Graphics g, PointF start, PointF end, Color color)
+        protected void DrawArrow(Graphics g, PointF start, PointF end, Color color)
         {
             // 计算箭头方向
             var dx = end.X - start.X;
