@@ -276,8 +276,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Algorithms
             // 添加边
             foreach (var canvasEdge in graph.Edges)
             {
-                var sourceId = canvasEdge.SourceNodeId;
-                var targetId = canvasEdge.TargetNodeId;
+                var sourceId = canvasEdge.SourceId;
+                var targetId = canvasEdge.TargetId;
 
                 if (!string.IsNullOrEmpty(sourceId) && !string.IsNullOrEmpty(targetId) &&
                     nodes.ContainsKey(sourceId) && nodes.ContainsKey(targetId))

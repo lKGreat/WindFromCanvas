@@ -40,6 +40,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Models
         /// <summary>
         /// 组件节点
         /// </summary>
-        Piece
+        Piece,
+
+        /// <summary>
+        /// 组/容器节点
+        /// </summary>
+        Group
     }
 }
