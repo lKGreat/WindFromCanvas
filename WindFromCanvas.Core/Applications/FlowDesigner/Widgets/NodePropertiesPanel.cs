@@ -317,6 +317,37 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
         }
 
         /// <summary>
+        /// 聚焦到名称编辑字段（用于F2重命名）
+        /// </summary>
+        public void FocusNameField()
+        {
+            if (_propertyControls.TryGetValue("DisplayName", out var control))
+            {
+                control.Focus();
+                if (control is TextBox textBox)
+                {
+                    textBox.SelectAll();
+                }
+            }
+            else if (_propertyControls.TryGetValue("Name", out var nameControl))
+            {
+                nameControl.Focus();
+                if (nameControl is TextBox textBox)
+                {
+                    textBox.SelectAll();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 刷新属性面板
+        /// </summary>
+        public void RefreshProperties()
+        {
+            RebuildUI();
+        }
+
+        /// <summary>
         /// 注册属性定义
         /// </summary>
         public void RegisterProperty(string groupName, PropertyDefinition property)
@@ -570,6 +601,44 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
                 };
             }
 
+            // 检查是否是表达式类型（属性名包含expression或condition）
+            if (IsExpressionProperty(prop.Name))
+            {
+                return CreateExpressionEditor(prop, value, theme);
+            }
+
+            // 检查是否是代码类型
+            if (prop.Name.ToLower() == "code" || prop.Name.ToLower() == "sourcecode")
+            {
+                return CreateCodeEditor(prop, value, theme);
+            }
+
+            // 检查是否是多行文本
+            if (prop.Name.ToLower() == "description" || prop.Name.ToLower() == "notes")
+            {
+                return CreateMultilineTextEditor(prop, value, theme);
+            }
+
+            // 检查是否是文件路径
+            if (prop.Name.ToLower().Contains("path") || prop.Name.ToLower().Contains("file"))
+            {
+                return CreateFilePathEditor(prop, value, theme);
+            }
+
+            // 检查是否是日期时间
+            if (prop.PropertyType == typeof(DateTime))
+            {
+                return CreateDateTimeEditor(prop, value, theme);
+            }
+
+            // 检查是否是JSON/字典类型
+            if (prop.PropertyType == typeof(Dictionary<string, object>) || 
+                prop.Name.ToLower() == "settings" || prop.Name.ToLower() == "properties" ||
+                prop.Name.ToLower() == "input" || prop.Name.ToLower() == "output")
+            {
+                return CreateJsonEditor(prop, value, theme);
+            }
+
             // 下拉选择
             if (prop.Options != null && prop.Options.Length > 0)
             {
@@ -817,6 +886,413 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
                 OldValue = oldValue,
                 NewValue = value
             });
+        }
+
+        #endregion
+
+        #region 高级编辑器
+
+        /// <summary>
+        /// 检查是否是表达式属性
+        /// </summary>
+        private bool IsExpressionProperty(string propertyName)
+        {
+            var lowerName = propertyName.ToLower();
+            return lowerName.Contains("expression") || 
+                   lowerName.Contains("condition") ||
+                   lowerName.Contains("items") ||
+                   lowerName.Contains("value");
+        }
+
+        /// <summary>
+        /// 创建表达式编辑器
+        /// 支持 {{step.output}} 等表达式语法
+        /// </summary>
+        private Control CreateExpressionEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var panel = new Panel
+            {
+                Height = 28,
+                BackColor = Color.Transparent
+            };
+
+            var textBox = new TextBox
+            {
+                Text = value?.ToString() ?? "",
+                Font = new Font("Consolas", 9),
+                ForeColor = theme.TextPrimary,
+                BackColor = theme.NodeBackground,
+                Location = new Point(0, 0),
+                Width = panel.Width - 30,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            
+            // 表达式高亮
+            textBox.TextChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                {
+                    SetPropertyValue(prop.Name, textBox.Text);
+                    // 简单的表达式验证
+                    var text = textBox.Text;
+                    if (text.Contains("{{") && !text.Contains("}}"))
+                    {
+                        textBox.BackColor = Color.FromArgb(255, 245, 245); // 浅红色表示未闭合
+                    }
+                    else if (text.Contains("{{") && text.Contains("}}"))
+                    {
+                        textBox.BackColor = Color.FromArgb(245, 255, 245); // 浅绿色表示有效表达式
+                    }
+                    else
+                    {
+                        textBox.BackColor = theme.NodeBackground;
+                    }
+                }
+            };
+
+            // 插入表达式按钮
+            var insertBtn = new Button
+            {
+                Text = "fx",
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                ForeColor = theme.Primary,
+                FlatStyle = FlatStyle.Flat,
+                Location = new Point(panel.Width - 28, 0),
+                Size = new Size(26, 24),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
+            };
+            insertBtn.FlatAppearance.BorderColor = theme.Border;
+            insertBtn.Click += (s, e) =>
+            {
+                // 显示表达式选择器（简化版：插入模板）
+                ShowExpressionPicker(textBox);
+            };
+
+            panel.Controls.Add(textBox);
+            panel.Controls.Add(insertBtn);
+            return panel;
+        }
+
+        /// <summary>
+        /// 显示表达式选择器
+        /// </summary>
+        private void ShowExpressionPicker(TextBox targetTextBox)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("插入步骤引用 {{step.output}}", null, (s, e) =>
+            {
+                InsertTextAtCursor(targetTextBox, "{{step.output}}");
+            });
+            menu.Items.Add("插入变量引用 {{variable}}", null, (s, e) =>
+            {
+                InsertTextAtCursor(targetTextBox, "{{variable}}");
+            });
+            menu.Items.Add("插入触发器数据 {{trigger.body}}", null, (s, e) =>
+            {
+                InsertTextAtCursor(targetTextBox, "{{trigger.body}}");
+            });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("字符串连接 {{a + b}}", null, (s, e) =>
+            {
+                InsertTextAtCursor(targetTextBox, "{{a + b}}");
+            });
+            menu.Items.Add("条件表达式 {{a ? b : c}}", null, (s, e) =>
+            {
+                InsertTextAtCursor(targetTextBox, "{{condition ? trueValue : falseValue}}");
+            });
+            
+            menu.Show(targetTextBox, new Point(0, targetTextBox.Height));
+        }
+
+        /// <summary>
+        /// 在光标处插入文本
+        /// </summary>
+        private void InsertTextAtCursor(TextBox textBox, string text)
+        {
+            int selectionStart = textBox.SelectionStart;
+            textBox.Text = textBox.Text.Insert(selectionStart, text);
+            textBox.SelectionStart = selectionStart + text.Length;
+            textBox.Focus();
+        }
+
+        /// <summary>
+        /// 创建代码编辑器
+        /// </summary>
+        private Control CreateCodeEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var panel = new Panel
+            {
+                Height = 120,
+                BackColor = Color.Transparent
+            };
+
+            var textBox = new TextBox
+            {
+                Text = value?.ToString() ?? "",
+                Font = new Font("Consolas", 9),
+                ForeColor = theme.TextPrimary,
+                BackColor = Color.FromArgb(30, 30, 30), // 深色代码背景
+                Multiline = true,
+                ScrollBars = ScrollBars.Both,
+                WordWrap = false,
+                AcceptsTab = true,
+                AcceptsReturn = true,
+                Dock = DockStyle.Fill
+            };
+
+            textBox.TextChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                    SetPropertyValue(prop.Name, textBox.Text);
+            };
+
+            // 简单的语法高亮（通过RichTextBox可以实现更好的效果）
+            textBox.KeyDown += (s, e) =>
+            {
+                if (e.Control && e.KeyCode == Keys.A)
+                {
+                    textBox.SelectAll();
+                    e.SuppressKeyPress = true;
+                }
+            };
+
+            // 工具栏
+            var toolbar = new Panel
+            {
+                Height = 24,
+                Dock = DockStyle.Top,
+                BackColor = Color.FromArgb(45, 45, 45)
+            };
+
+            var formatBtn = new Button
+            {
+                Text = "格式化",
+                Font = new Font("Segoe UI", 8),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Location = new Point(2, 2),
+                Size = new Size(50, 20),
+                Cursor = Cursors.Hand
+            };
+            formatBtn.FlatAppearance.BorderSize = 0;
+            formatBtn.Click += (s, e) =>
+            {
+                // 简单的JSON格式化
+                try
+                {
+                    var formatted = FormatJson(textBox.Text);
+                    textBox.Text = formatted;
+                }
+                catch { }
+            };
+
+            toolbar.Controls.Add(formatBtn);
+            panel.Controls.Add(textBox);
+            panel.Controls.Add(toolbar);
+
+            return panel;
+        }
+
+        /// <summary>
+        /// 简单的JSON格式化
+        /// </summary>
+        private string FormatJson(string json)
+        {
+            try
+            {
+                var obj = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
+                return Newtonsoft.Json.JsonConvert.SerializeObject(obj, Newtonsoft.Json.Formatting.Indented);
+            }
+            catch
+            {
+                return json;
+            }
+        }
+
+        /// <summary>
+        /// 创建多行文本编辑器
+        /// </summary>
+        private Control CreateMultilineTextEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var textBox = new TextBox
+            {
+                Text = value?.ToString() ?? "",
+                Font = new Font("Segoe UI", 9),
+                ForeColor = theme.TextPrimary,
+                BackColor = theme.NodeBackground,
+                Multiline = true,
+                ScrollBars = ScrollBars.Vertical,
+                Height = 60
+            };
+
+            textBox.TextChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                    SetPropertyValue(prop.Name, textBox.Text);
+            };
+
+            return textBox;
+        }
+
+        /// <summary>
+        /// 创建文件路径编辑器
+        /// </summary>
+        private Control CreateFilePathEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var panel = new Panel
+            {
+                Height = 24,
+                BackColor = Color.Transparent
+            };
+
+            var textBox = new TextBox
+            {
+                Text = value?.ToString() ?? "",
+                Font = new Font("Segoe UI", 9),
+                ForeColor = theme.TextPrimary,
+                BackColor = theme.NodeBackground,
+                Location = new Point(0, 0),
+                Width = panel.Width - 30,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+
+            textBox.TextChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                    SetPropertyValue(prop.Name, textBox.Text);
+            };
+
+            var browseBtn = new Button
+            {
+                Text = "...",
+                Font = new Font("Segoe UI", 9),
+                FlatStyle = FlatStyle.Flat,
+                Location = new Point(panel.Width - 28, 0),
+                Size = new Size(26, 24),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
+            };
+            browseBtn.FlatAppearance.BorderColor = theme.Border;
+            browseBtn.Click += (s, e) =>
+            {
+                if (prop.Name.ToLower().Contains("folder") || prop.Name.ToLower().Contains("directory"))
+                {
+                    using (var dlg = new FolderBrowserDialog())
+                    {
+                        if (!string.IsNullOrEmpty(textBox.Text))
+                            dlg.SelectedPath = textBox.Text;
+                        if (dlg.ShowDialog() == DialogResult.OK)
+                        {
+                            textBox.Text = dlg.SelectedPath;
+                        }
+                    }
+                }
+                else
+                {
+                    using (var dlg = new OpenFileDialog())
+                    {
+                        if (!string.IsNullOrEmpty(textBox.Text))
+                            dlg.FileName = textBox.Text;
+                        if (dlg.ShowDialog() == DialogResult.OK)
+                        {
+                            textBox.Text = dlg.FileName;
+                        }
+                    }
+                }
+            };
+
+            panel.Controls.Add(textBox);
+            panel.Controls.Add(browseBtn);
+            return panel;
+        }
+
+        /// <summary>
+        /// 创建日期时间编辑器
+        /// </summary>
+        private Control CreateDateTimeEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var picker = new DateTimePicker
+            {
+                Font = new Font("Segoe UI", 9),
+                Format = DateTimePickerFormat.Custom,
+                CustomFormat = "yyyy-MM-dd HH:mm:ss"
+            };
+
+            if (value is DateTime dt)
+            {
+                picker.Value = dt;
+            }
+
+            picker.ValueChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                    SetPropertyValue(prop.Name, picker.Value);
+            };
+
+            return picker;
+        }
+
+        /// <summary>
+        /// 创建JSON编辑器
+        /// </summary>
+        private Control CreateJsonEditor(PropertyDefinition prop, object value, ThemeConfig theme)
+        {
+            var panel = new Panel
+            {
+                Height = 80,
+                BackColor = Color.Transparent
+            };
+
+            string jsonText = "";
+            if (value is Dictionary<string, object> dict)
+            {
+                try
+                {
+                    jsonText = Newtonsoft.Json.JsonConvert.SerializeObject(dict, Newtonsoft.Json.Formatting.Indented);
+                }
+                catch
+                {
+                    jsonText = value?.ToString() ?? "{}";
+                }
+            }
+            else
+            {
+                jsonText = value?.ToString() ?? "{}";
+            }
+
+            var textBox = new TextBox
+            {
+                Text = jsonText,
+                Font = new Font("Consolas", 9),
+                ForeColor = theme.TextPrimary,
+                BackColor = theme.NodeBackground,
+                Multiline = true,
+                ScrollBars = ScrollBars.Both,
+                WordWrap = false,
+                Dock = DockStyle.Fill
+            };
+
+            textBox.TextChanged += (s, e) =>
+            {
+                if (!_isUpdating)
+                {
+                    try
+                    {
+                        var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(textBox.Text);
+                        SetPropertyValue(prop.Name, parsed);
+                        textBox.BackColor = theme.NodeBackground;
+                    }
+                    catch
+                    {
+                        // JSON解析失败，显示错误颜色
+                        textBox.BackColor = Color.FromArgb(255, 245, 245);
+                    }
+                }
+            };
+
+            panel.Controls.Add(textBox);
+            return panel;
         }
 
         #endregion

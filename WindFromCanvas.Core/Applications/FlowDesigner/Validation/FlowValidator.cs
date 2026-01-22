@@ -881,4 +881,34 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Validation
     }
 
     #endregion
+
+    #region 事件参数
+
+    /// <summary>
+    /// 验证结果变更事件参数
+    /// </summary>
+    public class ValidationResultEventArgs : EventArgs
+    {
+        /// <summary>
+        /// 验证结果
+        /// </summary>
+        public ValidationResult Result { get; set; }
+
+        /// <summary>
+        /// 错误数量
+        /// </summary>
+        public int ErrorCount { get; set; }
+
+        /// <summary>
+        /// 警告数量
+        /// </summary>
+        public int WarningCount { get; set; }
+
+        /// <summary>
+        /// 是否有效
+        /// </summary>
+        public bool IsValid => Result?.IsValid ?? true;
+    }
+
+    #endregion
 }

@@ -55,6 +55,21 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
         public bool IsHovered { get; set; }
 
         /// <summary>
+        /// 是否跳过执行
+        /// </summary>
+        public bool IsSkipped
+        {
+            get => Data?.Skip ?? false;
+            set
+            {
+                if (Data != null)
+                {
+                    Data.Skip = value;
+                }
+            }
+        }
+
+        /// <summary>
         /// 验证错误信息
         /// </summary>
         public string ValidationError { get; set; }

@@ -107,6 +107,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 拖拽预览位置
         /// </summary>
         private PointF _dragPreviewPosition = PointF.Empty;
+        
+        /// <summary>
+        /// 是否显示拖拽预览
+        /// </summary>
+        private bool _isDragPreviewVisible = false;
+        
+        /// <summary>
+        /// 拖拽预览的屏幕位置
+        /// </summary>
+        private PointF _dragPreviewScreenPosition = PointF.Empty;
 
         /// <summary>
         /// 多选拖拽的节点列表
@@ -172,6 +182,21 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 验证结果
         /// </summary>
         public ValidationResult LastValidationResult { get; private set; }
+
+        /// <summary>
+        /// 验证高亮列表
+        /// </summary>
+        private List<ValidationHighlight> _validationHighlights = new List<ValidationHighlight>();
+
+        /// <summary>
+        /// 是否显示验证结果
+        /// </summary>
+        public bool ShowValidationResults { get; set; } = true;
+
+        /// <summary>
+        /// 验证结果变更事件
+        /// </summary>
+        public event EventHandler<ValidationResultEventArgs> ValidationResultChanged;
 
         /// <summary>
         /// 是否启用视口裁剪（只渲染可见区域）
@@ -270,6 +295,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             this.DragEnter += FlowDesignerCanvas_DragEnter;
             this.DragOver += FlowDesignerCanvas_DragOver;
             this.DragDrop += FlowDesignerCanvas_DragDrop;
+            this.DragLeave += FlowDesignerCanvas_DragLeave;
             this.AllowDrop = true;
             this.KeyDown += FlowDesignerCanvas_KeyDown;
             this.KeyUp += FlowDesignerCanvas_KeyUp;
@@ -284,9 +310,18 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             _contextMenu.AddNodeRequested += ContextMenu_AddNodeRequested;
             _contextMenu.PasteRequested += ContextMenu_PasteRequested;
             _contextMenu.CopyRequested += ContextMenu_CopyRequested;
+            _contextMenu.CutRequested += ContextMenu_CutRequested;
             _contextMenu.DeleteRequested += ContextMenu_DeleteRequested;
             _contextMenu.PropertiesRequested += ContextMenu_PropertiesRequested;
             _contextMenu.SkipNodeRequested += ContextMenu_SkipNodeRequested;
+            _contextMenu.ReplaceNodeRequested += ContextMenu_ReplaceNodeRequested;
+            _contextMenu.DuplicateRequested += ContextMenu_DuplicateRequested;
+            _contextMenu.AddBranchRequested += ContextMenu_AddBranchRequested;
+            _contextMenu.RenameRequested += ContextMenu_RenameRequested;
+            _contextMenu.SelectAllRequested += ContextMenu_SelectAllRequested;
+            _contextMenu.FitToViewRequested += ContextMenu_FitToViewRequested;
+            _contextMenu.UndoRequested += ContextMenu_UndoRequested;
+            _contextMenu.RedoRequested += ContextMenu_RedoRequested;
 
             // 订阅动画更新事件，触发重绘
             WindFromCanvas.Core.Applications.FlowDesigner.Animation.AnimationManager.Instance.AnimationUpdated += (s, e) => Invalidate();
@@ -987,10 +1022,61 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 // 降级渲染（如果LayeredRenderer未初始化）
                 g.Clear(BackgroundColor);
             }
+            
+            // 绘制拖拽预览
+            if (_isDragPreviewVisible)
+            {
+                DrawDragPreview(g);
+            }
+            
+            // 绘制连接创建预览
+            if (_isCreatingConnection && _connectionSourceNode != null)
+            {
+                DrawConnectionPreview(g);
+            }
 
             // 记录性能
             PerformanceMonitor.Instance.RecordFrame();
         }
+        
+        /// <summary>
+        /// 绘制拖拽预览
+        /// </summary>
+        private void DrawDragPreview(Graphics g)
+        {
+            const int previewSize = 60;
+            var rect = new RectangleF(
+                _dragPreviewScreenPosition.X - previewSize / 2,
+                _dragPreviewScreenPosition.Y - previewSize / 2,
+                previewSize,
+                previewSize
+            );
+            
+            // 绘制半透明预览框
+            using (var brush = new SolidBrush(Color.FromArgb(100, 100, 149, 237)))
+            {
+                g.FillRectangle(brush, rect);
+            }
+            
+            using (var pen = new Pen(Color.FromArgb(180, 65, 105, 225), 2))
+            {
+                pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
+            }
+            
+            // 绘制加号
+            using (var font = new Font("Segoe UI", 20, FontStyle.Bold))
+            using (var brush = new SolidBrush(Color.FromArgb(200, 65, 105, 225)))
+            {
+                var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                g.DrawString("+", font, brush, rect, format);
+            }
+        }
+        
 
         /// <summary>
         /// 网格类型（点状或线状）
@@ -1090,6 +1176,165 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 是否显示小地图
         /// </summary>
         public bool ShowMinimap { get; set; } = false;
+
+        /// <summary>
+        /// 流程执行器
+        /// </summary>
+        private Execution.FlowExecutor _executor;
+
+        /// <summary>
+        /// 执行器实例
+        /// </summary>
+        public Execution.FlowExecutor Executor
+        {
+            get
+            {
+                if (_executor == null)
+                {
+                    _executor = new Execution.FlowExecutor(Document, _nodes);
+                    _executor.StateChanged += Executor_StateChanged;
+                    _executor.NodeExecuted += Executor_NodeExecuted;
+                    _executor.BreakpointHit += Executor_BreakpointHit;
+                }
+                return _executor;
+            }
+        }
+
+        /// <summary>
+        /// 执行状态变更事件
+        /// </summary>
+        public event EventHandler<Execution.ExecutionStateChangedEventArgs> ExecutionStateChanged;
+
+        /// <summary>
+        /// 开始执行流程
+        /// </summary>
+        public async System.Threading.Tasks.Task StartExecutionAsync()
+        {
+            await Executor.StartAsync();
+        }
+
+        /// <summary>
+        /// 暂停执行
+        /// </summary>
+        public void PauseExecution()
+        {
+            Executor.Pause();
+        }
+
+        /// <summary>
+        /// 继续执行
+        /// </summary>
+        public void ContinueExecution()
+        {
+            Executor.Continue();
+        }
+
+        /// <summary>
+        /// 单步执行
+        /// </summary>
+        public void StepExecution()
+        {
+            Executor.StepOver();
+        }
+
+        /// <summary>
+        /// 停止执行
+        /// </summary>
+        public void StopExecution()
+        {
+            Executor.Stop();
+        }
+
+        /// <summary>
+        /// 切换节点断点
+        /// </summary>
+        public bool ToggleBreakpoint(FlowNode node)
+        {
+            if (node?.Data == null) return false;
+            return Executor.ToggleBreakpoint(node.Data.Name);
+        }
+
+        /// <summary>
+        /// 切换选中节点的断点
+        /// </summary>
+        public void ToggleSelectedNodeBreakpoint()
+        {
+            if (_selectedNodes.Count == 1)
+            {
+                var node = _selectedNodes.First();
+                ToggleBreakpoint(node);
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 执行状态变更处理
+        /// </summary>
+        private void Executor_StateChanged(object sender, Execution.ExecutionStateChangedEventArgs e)
+        {
+            // 转发事件
+            ExecutionStateChanged?.Invoke(this, e);
+            
+            // 刷新画布以显示状态变化
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 节点执行处理
+        /// </summary>
+        private void Executor_NodeExecuted(object sender, Execution.NodeExecutionEventArgs e)
+        {
+            // 更新节点状态
+            if (_nodes.TryGetValue(e.NodeName, out var node) && node.Data != null)
+            {
+                switch (e.Status)
+                {
+                    case Execution.NodeExecutionStatus.Running:
+                        node.Data.Status = NodeStatus.Running;
+                        break;
+                    case Execution.NodeExecutionStatus.Success:
+                        node.Data.Status = NodeStatus.Success;
+                        break;
+                    case Execution.NodeExecutionStatus.Failed:
+                        node.Data.Status = NodeStatus.Failed;
+                        break;
+                    case Execution.NodeExecutionStatus.Skipped:
+                        node.Data.Status = NodeStatus.Skipped;
+                        break;
+                }
+            }
+
+            // 如果是当前执行节点，居中显示
+            if (e.Status == Execution.NodeExecutionStatus.Running)
+            {
+                if (_nodes.TryGetValue(e.NodeName, out var currentNode))
+                {
+                    EnsureNodeVisible(currentNode);
+                }
+            }
+
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 断点命中处理
+        /// </summary>
+        private void Executor_BreakpointHit(object sender, Execution.BreakpointHitEventArgs e)
+        {
+            // 选中断点节点
+            if (_nodes.TryGetValue(e.NodeName, out var node))
+            {
+                ClearSelection();
+                SelectNode(node);
+                CenterOnNode(node);
+            }
+
+            // 显示属性面板
+            if (PropertiesPanel != null && _nodes.TryGetValue(e.NodeName, out var propNode))
+            {
+                PropertiesPanel.SetSelectedNode(propNode);
+            }
+        }
 
         /// <summary>
         /// 平移模式枚举
@@ -1298,6 +1543,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             if (e.Data.GetDataPresent(typeof(FlowNodeType)))
             {
                 e.Effect = DragDropEffects.Copy;
+                // 显示拖拽预览提示
+                _isDragPreviewVisible = true;
+                Invalidate();
             }
         }
 
@@ -1309,6 +1557,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             if (e.Data.GetDataPresent(typeof(FlowNodeType)))
             {
                 e.Effect = DragDropEffects.Copy;
+                // 更新拖拽预览位置
+                _dragPreviewScreenPosition = this.PointToClient(new Point(e.X, e.Y));
+                Invalidate();
             }
         }
 
@@ -1317,16 +1568,91 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// </summary>
         private void FlowDesignerCanvas_DragDrop(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(typeof(FlowNodeType)) && Toolbox != null)
+            _isDragPreviewVisible = false;
+            
+            if (e.Data.GetDataPresent(typeof(FlowNodeType)))
             {
                 var nodeType = (FlowNodeType)e.Data.GetData(typeof(FlowNodeType));
-                var position = this.PointToClient(new Point(e.X, e.Y));
+                var screenPosition = this.PointToClient(new Point(e.X, e.Y));
                 
-                var node = Toolbox.CreateNode(nodeType, position);
+                // 转换为世界坐标
+                var worldPosition = ScreenToWorld(screenPosition);
+                
+                // 使用 Toolbox 创建节点，如果没有 Toolbox 则直接创建
+                FlowNode node = null;
+                if (Toolbox != null)
+                {
+                    node = Toolbox.CreateNode(nodeType, worldPosition);
+                }
+                else
+                {
+                    // 直接创建节点
+                    var nodeData = new FlowNodeData
+                    {
+                        Name = Guid.NewGuid().ToString(),
+                        DisplayName = GetNodeDisplayName(nodeType),
+                        Type = nodeType,
+                        Position = worldPosition
+                    };
+                    node = CreateNodeFromType(nodeType, nodeData);
+                }
+                
                 if (node != null)
                 {
                     AddNode(node);
+                    
+                    // 选中新创建的节点
+                    SelectNode(node);
+                    
+                    // 触发画布刷新
+                    Invalidate();
                 }
+            }
+        }
+        
+        /// <summary>
+        /// 处理拖拽离开
+        /// </summary>
+        private void FlowDesignerCanvas_DragLeave(object sender, EventArgs e)
+        {
+            _isDragPreviewVisible = false;
+            Invalidate();
+        }
+        
+        /// <summary>
+        /// 获取节点类型的显示名称
+        /// </summary>
+        private string GetNodeDisplayName(FlowNodeType type)
+        {
+            switch (type)
+            {
+                case FlowNodeType.Start: return "开始";
+                case FlowNodeType.End: return "结束";
+                case FlowNodeType.Process: return "处理";
+                case FlowNodeType.Decision: return "判断";
+                case FlowNodeType.Loop: return "循环";
+                case FlowNodeType.Code: return "代码";
+                case FlowNodeType.Piece: return "组件";
+                case FlowNodeType.Group: return "分组";
+                default: return "节点";
+            }
+        }
+        
+        /// <summary>
+        /// 根据类型创建节点实例
+        /// </summary>
+        private FlowNode CreateNodeFromType(FlowNodeType type, FlowNodeData data)
+        {
+            switch (type)
+            {
+                case FlowNodeType.Start: return new StartNode(data);
+                case FlowNodeType.End: return new EndNode(data);
+                case FlowNodeType.Process: return new ProcessNode(data);
+                case FlowNodeType.Decision: return new DecisionNode(data);
+                case FlowNodeType.Loop: return new LoopNode(data);
+                case FlowNodeType.Code: return new CodeNode(data);
+                case FlowNodeType.Piece: return new PieceNode(data);
+                default: return new ProcessNode(data);
             }
         }
 
@@ -1365,38 +1691,284 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// </summary>
         private void FlowDesignerCanvas_KeyDown(object sender, KeyEventArgs e)
         {
-            // 3.5.7 使用ShortcutManager统一处理快捷键
+            // 优先处理画布级别的快捷键
+            bool handled = HandleCanvasShortcut(e);
+            if (handled)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            // 3.5.7 尝试由ShortcutManager处理（用于与BuilderStateStore集成的快捷键）
             var keyData = e.KeyData;
-            
-            // 尝试由ShortcutManager处理
             if (_shortcutManager != null && _shortcutManager.HandleKeyPress(keyData))
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                
-                // 刷新画布以显示更改
                 RefreshCanvas();
                 return;
             }
+        }
 
-            // 保留原有的撤销/重做逻辑（不在ShortcutManager中）
+        /// <summary>
+        /// 处理画布级别的快捷键
+        /// </summary>
+        private bool HandleCanvasShortcut(KeyEventArgs e)
+        {
+            // Ctrl+Z - 撤销
             if (e.Control && e.KeyCode == Keys.Z)
             {
-                // Ctrl+Z 撤销
                 if (CommandManager.CanUndo)
                 {
                     CommandManager.Undo();
-                    e.Handled = true;
+                    Invalidate();
+                    return true;
                 }
             }
+            // Ctrl+Y - 重做
             else if (e.Control && e.KeyCode == Keys.Y)
             {
-                // Ctrl+Y 重做
                 if (CommandManager.CanRedo)
                 {
                     CommandManager.Redo();
-                    e.Handled = true;
+                    Invalidate();
+                    return true;
                 }
+            }
+            // Ctrl+C - 复制
+            else if (e.Control && e.KeyCode == Keys.C)
+            {
+                CopySelectedNodes();
+                return true;
+            }
+            // Ctrl+V - 粘贴
+            else if (e.Control && e.KeyCode == Keys.V)
+            {
+                PasteNodes();
+                return true;
+            }
+            // Ctrl+X - 剪切
+            else if (e.Control && e.KeyCode == Keys.X)
+            {
+                CutSelectedNodes();
+                return true;
+            }
+            // Delete 或 Backspace - 删除
+            else if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
+            {
+                DeleteSelectedNodes();
+                return true;
+            }
+            // Ctrl+A - 全选
+            else if (e.Control && e.KeyCode == Keys.A)
+            {
+                SelectAllNodes();
+                return true;
+            }
+            // Ctrl+E - 跳过/取消跳过
+            else if (e.Control && e.KeyCode == Keys.E)
+            {
+                ToggleSkipSelectedNodes();
+                return true;
+            }
+            // Ctrl+D - 复制节点（快速复制）
+            else if (e.Control && e.KeyCode == Keys.D)
+            {
+                DuplicateSelectedNodes();
+                return true;
+            }
+            // Ctrl+S - 保存（触发事件）
+            else if (e.Control && e.KeyCode == Keys.S)
+            {
+                OnSaveRequested();
+                return true;
+            }
+            // Ctrl+M - 小地图切换
+            else if (e.Control && e.KeyCode == Keys.M)
+            {
+                ShowMinimap = !ShowMinimap;
+                Invalidate();
+                return true;
+            }
+            // Escape - 取消当前操作
+            else if (e.KeyCode == Keys.Escape)
+            {
+                CancelCurrentOperation();
+                return true;
+            }
+            // 方向键 - 微调节点位置
+            else if (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right ||
+                     e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)
+            {
+                float delta = e.Shift ? 10f : 1f; // Shift加速移动
+                float dx = 0, dy = 0;
+                
+                switch (e.KeyCode)
+                {
+                    case Keys.Left: dx = -delta; break;
+                    case Keys.Right: dx = delta; break;
+                    case Keys.Up: dy = -delta; break;
+                    case Keys.Down: dy = delta; break;
+                }
+                
+                MoveSelectedNodesBy(dx, dy);
+                return true;
+            }
+            // F2 - 重命名选中节点
+            else if (e.KeyCode == Keys.F2)
+            {
+                RenameSelectedNode();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 剪切选中的节点
+        /// </summary>
+        public void CutSelectedNodes()
+        {
+            if (_selectedNodes.Count == 0) return;
+            
+            CopySelectedNodes();
+            DeleteSelectedNodes();
+        }
+
+        /// <summary>
+        /// 全选节点
+        /// </summary>
+        public void SelectAllNodes()
+        {
+            ClearSelection();
+            foreach (var node in _nodes.Values)
+            {
+                SelectNode(node, true);
+            }
+        }
+
+        /// <summary>
+        /// 切换选中节点的跳过状态
+        /// </summary>
+        public void ToggleSkipSelectedNodes()
+        {
+            if (_selectedNodes.Count == 0) return;
+
+            foreach (var node in _selectedNodes)
+            {
+                if (node.Data != null)
+                {
+                    node.Data.Skip = !node.Data.Skip;
+                    // 更新节点视觉状态
+                    node.IsSkipped = node.Data.Skip;
+                }
+            }
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 复制选中的节点（原地复制）
+        /// </summary>
+        public void DuplicateSelectedNodes()
+        {
+            if (_selectedNodes.Count == 0) return;
+
+            // 先复制到剪贴板
+            CopySelectedNodes();
+            
+            // 然后粘贴
+            PasteNodes();
+        }
+
+        /// <summary>
+        /// 保存请求事件
+        /// </summary>
+        public event EventHandler SaveRequested;
+
+        /// <summary>
+        /// 触发保存请求事件
+        /// </summary>
+        private void OnSaveRequested()
+        {
+            SaveRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// 取消当前操作
+        /// </summary>
+        private void CancelCurrentOperation()
+        {
+            // 取消连接创建
+            if (_isCreatingConnection)
+            {
+                _isCreatingConnection = false;
+                _connectionSourceNode = null;
+                _potentialTargetNode = null;
+                _connectionPreviewAnimationOffset = 0f;
+            }
+            
+            // 取消框选
+            if (_isSelecting)
+            {
+                _isSelecting = false;
+            }
+            
+            // 取消拖拽
+            if (_draggingNode != null)
+            {
+                _draggingNode = null;
+                _draggingNodes.Clear();
+            }
+            
+            // 清除选择
+            if (_selectedNodes.Count > 0)
+            {
+                ClearSelection();
+            }
+            
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 移动选中的节点（相对偏移）
+        /// </summary>
+        private void MoveSelectedNodesBy(float dx, float dy)
+        {
+            if (_selectedNodes.Count == 0) return;
+
+            foreach (var node in _selectedNodes)
+            {
+                node.X += dx;
+                node.Y += dy;
+                
+                // 更新数据
+                if (node.Data != null)
+                {
+                    node.Data.Position = new PointF(node.X, node.Y);
+                }
+                
+                // 更新相关连接
+                UpdateConnectionsForNode(node);
+            }
+            
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 重命名选中的节点
+        /// </summary>
+        private void RenameSelectedNode()
+        {
+            if (_selectedNodes.Count != 1) return;
+
+            var node = _selectedNodes.First();
+            
+            // 显示属性面板或内联编辑
+            if (PropertiesPanel != null)
+            {
+                PropertiesPanel.SetSelectedNode(node);
+                PropertiesPanel.FocusNameField();
             }
         }
 
@@ -1520,15 +2092,27 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
+        /// FlowDocument 和 FlowVersion 之间的转换器
+        /// </summary>
+        private FlowDocumentConverter _documentConverter = new FlowDocumentConverter();
+
+        /// <summary>
         /// 保存流程到文件
         /// </summary>
         public void SaveToFile(string filePath)
         {
-            // TODO: 适配 FlowDocument 到 FlowVersion 的转换
-            // 当前保持原有逻辑，使用旧的序列化方式
+            if (string.IsNullOrEmpty(filePath))
+                throw new ArgumentNullException(nameof(filePath));
+
+            // 同步当前节点数据到文档
+            SyncNodesToDocument();
+
+            // 将 FlowDocument 转换为 FlowVersion
+            var version = _documentConverter.ConvertToVersion(Document);
+            
+            // 使用序列化器保存
             var serializer = new FlowSerializer();
-            // 注意：这里需要将 FlowDocument 转换为 FlowVersion，暂时注释
-            // serializer.SaveToFile(ConvertDocumentToVersion(Document), filePath);
+            serializer.SaveToFile(version, filePath);
         }
 
         /// <summary>
@@ -1536,15 +2120,53 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// </summary>
         public void LoadFromFile(string filePath)
         {
-            // TODO: 适配 FlowVersion 到 FlowDocument 的转换
-            // 当前保持原有逻辑，使用旧的序列化方式
+            if (string.IsNullOrEmpty(filePath))
+                throw new ArgumentNullException(nameof(filePath));
+
+            if (!System.IO.File.Exists(filePath))
+                throw new System.IO.FileNotFoundException("流程文件不存在", filePath);
+
+            // 使用序列化器加载
             var serializer = new FlowSerializer();
-            // 注意：这里需要将 FlowVersion 转换为 FlowDocument，暂时注释
-            // var version = serializer.LoadFromFile(filePath);
-            // if (version != null)
-            // {
-            //     LoadDocument(ConvertVersionToDocument(version));
-            // }
+            var version = serializer.LoadFromFile(filePath);
+            
+            if (version != null)
+            {
+                // 将 FlowVersion 转换为 FlowDocument
+                var document = _documentConverter.ConvertToDocument(version);
+                LoadDocument(document);
+            }
+        }
+
+        /// <summary>
+        /// 同步画布节点到文档数据
+        /// </summary>
+        private void SyncNodesToDocument()
+        {
+            // 更新节点位置和属性
+            Document.Nodes.Clear();
+            foreach (var node in _nodes.Values)
+            {
+                if (node.Data != null)
+                {
+                    // 同步位置
+                    node.Data.Position = new PointF(node.X, node.Y);
+                    Document.Nodes.Add(node.Data);
+                }
+            }
+
+            // 更新连接
+            Document.Connections.Clear();
+            foreach (var conn in _connections.Values)
+            {
+                if (conn.Data != null)
+                {
+                    Document.Connections.Add(conn.Data);
+                }
+            }
+
+            // 更新修改时间
+            Document.ModifiedAt = DateTime.Now;
         }
 
         /// <summary>
@@ -2116,22 +2738,34 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 var hitNode = HitTestNode(worldPoint);
                 var hitConnection = HitTestConnection(worldPoint);
 
+                // 更新撤销/重做状态
+                _contextMenu.SetUndoRedoState(CommandManager.CanUndo, CommandManager.CanRedo);
+
                 if (hitNode != null)
                 {
-                    // 显示节点菜单
-                    SelectNode(hitNode);
-                    _contextMenu.ShowNodeMenu(this, e.Location, hitNode);
+                    // 检查是否有多个节点选中
+                    if (_selectedNodes.Count > 1 && _selectedNodes.Contains(hitNode))
+                    {
+                        // 显示多选菜单
+                        _contextMenu.ShowMultiSelectMenu(this, e.Location, _selectedNodes.Count);
+                    }
+                    else
+                    {
+                        // 显示单节点菜单
+                        SelectNode(hitNode);
+                        _contextMenu.ShowNodeMenu(this, e.Location, hitNode);
+                    }
                 }
                 else if (hitConnection != null)
                 {
                     // 显示连接线菜单
                     _rightClickedConnection = hitConnection;
-                    _contextMenu.ShowConnectionMenu(this, e.Location);
+                    _contextMenu.ShowConnectionMenu(this, e.Location, worldPoint);
                 }
                 else
                 {
                     // 显示画布菜单
-                    _contextMenu.ShowCanvasMenu(this, e.Location);
+                    _contextMenu.ShowCanvasMenu(this, e.Location, worldPoint);
                 }
             }
         }
@@ -2146,26 +2780,46 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 .FirstOrDefault(c => c.Visible && c.HitTest(worldPoint));
         }
 
-        private void ContextMenu_AddNodeRequested(object sender, FlowNodeType nodeType)
+        private void ContextMenu_AddNodeRequested(object sender, Widgets.FlowContextMenu.AddNodeEventArgs e)
         {
             if (Toolbox == null) return;
 
-            var worldPoint = ScreenToWorld(_contextMenu.Location);
-            var node = Toolbox.CreateNode(nodeType, worldPoint);
+            var node = Toolbox.CreateNode(e.NodeType, e.Position);
             if (node != null)
             {
                 AddNode(node);
+                SelectNode(node);
             }
         }
 
-        private void ContextMenu_PasteRequested(object sender, EventArgs e)
+        private void ContextMenu_PasteRequested(object sender, Widgets.FlowContextMenu.PasteEventArgs e)
         {
-            PasteNodes();
+            // 根据粘贴目标执行不同操作
+            switch (e.Target)
+            {
+                case Widgets.FlowContextMenu.PasteTarget.Canvas:
+                    PasteNodes();
+                    break;
+                case Widgets.FlowContextMenu.PasteTarget.AfterNode:
+                    PasteNodesAfter(e.TargetNodeName);
+                    break;
+                case Widgets.FlowContextMenu.PasteTarget.IntoLoop:
+                    PasteNodesIntoLoop(e.TargetNodeName);
+                    break;
+                case Widgets.FlowContextMenu.PasteTarget.IntoBranch:
+                    PasteNodesIntoBranch(e.TargetNodeName);
+                    break;
+            }
         }
 
         private void ContextMenu_CopyRequested(object sender, EventArgs e)
         {
             CopySelectedNodes();
+        }
+
+        private void ContextMenu_CutRequested(object sender, EventArgs e)
+        {
+            CutSelectedNodes();
         }
 
         private void ContextMenu_DeleteRequested(object sender, EventArgs e)
@@ -2201,15 +2855,217 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
 
         private void ContextMenu_SkipNodeRequested(object sender, EventArgs e)
         {
-            if (_selectedNodes.Count > 0)
+            ToggleSkipSelectedNodes();
+        }
+
+        private void ContextMenu_ReplaceNodeRequested(object sender, FlowNodeType newType)
+        {
+            if (_selectedNodes.Count == 0) return;
+
+            var node = _selectedNodes.First();
+            ReplaceNodeType(node, newType);
+        }
+
+        private void ContextMenu_DuplicateRequested(object sender, EventArgs e)
+        {
+            DuplicateSelectedNodes();
+        }
+
+        private void ContextMenu_AddBranchRequested(object sender, EventArgs e)
+        {
+            if (_selectedNodes.Count == 0) return;
+
+            var node = _selectedNodes.First();
+            if (node.Data?.Type == FlowNodeType.Decision)
             {
-                var node = _selectedNodes.First();
-                if (node.Data != null)
+                // TODO: 实现添加分支逻辑
+                // 当前只是占位符
+            }
+        }
+
+        private void ContextMenu_RenameRequested(object sender, EventArgs e)
+        {
+            RenameSelectedNode();
+        }
+
+        private void ContextMenu_SelectAllRequested(object sender, EventArgs e)
+        {
+            SelectAllNodes();
+        }
+
+        private void ContextMenu_FitToViewRequested(object sender, EventArgs e)
+        {
+            FitToView();
+        }
+
+        private void ContextMenu_UndoRequested(object sender, EventArgs e)
+        {
+            if (CommandManager.CanUndo)
+            {
+                CommandManager.Undo();
+                Invalidate();
+            }
+        }
+
+        private void ContextMenu_RedoRequested(object sender, EventArgs e)
+        {
+            if (CommandManager.CanRedo)
+            {
+                CommandManager.Redo();
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 粘贴到指定节点之后
+        /// </summary>
+        private void PasteNodesAfter(string targetNodeName)
+        {
+            if (string.IsNullOrEmpty(targetNodeName) || !_nodes.TryGetValue(targetNodeName, out var targetNode))
+            {
+                PasteNodes();
+                return;
+            }
+
+            var clipboardData = Clipboard.FlowClipboard.PasteNodes();
+            if (clipboardData == null || clipboardData.Nodes == null || clipboardData.Nodes.Count == 0)
+                return;
+
+            // 计算偏移位置（在目标节点下方）
+            var offsetY = targetNode.Height + 50f;
+
+            var nodeMap = new Dictionary<string, FlowNode>();
+            var newNodes = new List<FlowNode>();
+
+            foreach (var nodeData in clipboardData.Nodes)
+            {
+                var newName = GenerateUniqueNodeName(nodeData.Name);
+                var newData = nodeData.Clone();
+                newData.Name = newName;
+                newData.Position = new PointF(targetNode.X, targetNode.Y + offsetY);
+                offsetY += 70f;
+
+                FlowNode newNode = Toolbox != null 
+                    ? Toolbox.CreateNodeFromData(newData) 
+                    : CreateNodeFromData(newData);
+
+                if (newNode != null)
                 {
-                    node.Data.Skip = !node.Data.Skip;
-                    Invalidate();
+                    nodeMap[nodeData.Name] = newNode;
+                    newNodes.Add(newNode);
+                    AddNode(newNode);
                 }
             }
+
+            // 创建从目标节点到第一个新节点的连接
+            if (newNodes.Count > 0)
+            {
+                CreateConnection(targetNode, newNodes[0]);
+            }
+
+            // 选中新粘贴的节点
+            ClearSelection();
+            foreach (var node in newNodes)
+            {
+                SelectNode(node, true);
+            }
+        }
+
+        /// <summary>
+        /// 粘贴到循环节点内部
+        /// </summary>
+        private void PasteNodesIntoLoop(string loopNodeName)
+        {
+            // 简化实现：在循环节点位置粘贴
+            if (!string.IsNullOrEmpty(loopNodeName) && _nodes.TryGetValue(loopNodeName, out var loopNode))
+            {
+                PasteNodesAfter(loopNodeName);
+            }
+            else
+            {
+                PasteNodes();
+            }
+        }
+
+        /// <summary>
+        /// 粘贴到分支内部
+        /// </summary>
+        private void PasteNodesIntoBranch(string branchNodeName)
+        {
+            // 简化实现：在分支节点位置粘贴
+            if (!string.IsNullOrEmpty(branchNodeName) && _nodes.TryGetValue(branchNodeName, out var branchNode))
+            {
+                PasteNodesAfter(branchNodeName);
+            }
+            else
+            {
+                PasteNodes();
+            }
+        }
+
+        /// <summary>
+        /// 替换节点类型
+        /// </summary>
+        private void ReplaceNodeType(FlowNode oldNode, FlowNodeType newType)
+        {
+            if (oldNode?.Data == null || Toolbox == null) return;
+
+            // 保存旧节点的连接
+            var incomingConnections = _connections.Values
+                .Where(c => c.TargetNode == oldNode)
+                .Select(c => c.SourceNode?.Data?.Name)
+                .Where(n => n != null)
+                .ToList();
+
+            var outgoingConnections = _connections.Values
+                .Where(c => c.SourceNode == oldNode)
+                .Select(c => c.TargetNode?.Data?.Name)
+                .Where(n => n != null)
+                .ToList();
+
+            // 创建新节点
+            var newData = new FlowNodeData
+            {
+                Name = oldNode.Data.Name,
+                DisplayName = oldNode.Data.DisplayName,
+                Type = newType,
+                Position = oldNode.Data.Position,
+                Settings = oldNode.Data.Settings != null 
+                    ? new Dictionary<string, object>(oldNode.Data.Settings) 
+                    : new Dictionary<string, object>(),
+                Properties = oldNode.Data.Properties != null 
+                    ? new Dictionary<string, object>(oldNode.Data.Properties) 
+                    : new Dictionary<string, object>()
+            };
+
+            var newNode = Toolbox.CreateNodeFromData(newData);
+            if (newNode == null) return;
+
+            // 移除旧节点
+            RemoveNode(oldNode);
+
+            // 添加新节点
+            AddNode(newNode);
+
+            // 重建连接
+            foreach (var sourceName in incomingConnections)
+            {
+                if (_nodes.TryGetValue(sourceName, out var sourceNode))
+                {
+                    CreateConnection(sourceNode, newNode);
+                }
+            }
+
+            foreach (var targetName in outgoingConnections)
+            {
+                if (_nodes.TryGetValue(targetName, out var targetNode))
+                {
+                    CreateConnection(newNode, targetNode);
+                }
+            }
+
+            // 选中新节点
+            SelectNode(newNode);
         }
 
         /// <summary>
@@ -2236,8 +3092,140 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
             }
 
+            // 更新验证高亮
+            UpdateValidationHighlights();
+
+            // 触发验证结果变更事件
+            ValidationResultChanged?.Invoke(this, new ValidationResultEventArgs
+            {
+                Result = LastValidationResult,
+                ErrorCount = LastValidationResult.Errors.Count,
+                WarningCount = LastValidationResult.Warnings.Count
+            });
+
             Invalidate();
             return LastValidationResult;
+        }
+
+        /// <summary>
+        /// 更新验证高亮
+        /// </summary>
+        private void UpdateValidationHighlights()
+        {
+            _validationHighlights.Clear();
+
+            if (LastValidationResult == null)
+                return;
+
+            // 从验证结果生成高亮
+            _validationHighlights = FlowValidator.Instance.GetValidationHighlights(LastValidationResult, _nodes);
+        }
+
+        /// <summary>
+        /// 清除验证结果
+        /// </summary>
+        public void ClearValidationResults()
+        {
+            LastValidationResult = null;
+            _validationHighlights.Clear();
+
+            // 清除节点验证状态
+            foreach (var node in _nodes.Values)
+            {
+                node.ValidationError = null;
+                if (node.Data != null)
+                {
+                    node.Data.Valid = true;
+                }
+            }
+
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 导航到验证错误
+        /// </summary>
+        public void NavigateToValidationError(ValidationError error)
+        {
+            if (error == null || string.IsNullOrEmpty(error.NodeName))
+                return;
+
+            if (_nodes.TryGetValue(error.NodeName, out var node))
+            {
+                // 居中显示节点
+                CenterOnNode(node);
+                
+                // 选中节点
+                ClearSelection();
+                SelectNode(node);
+                
+                // 显示属性面板
+                if (PropertiesPanel != null)
+                {
+                    PropertiesPanel.SetSelectedNode(node);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 导航到验证警告
+        /// </summary>
+        public void NavigateToValidationWarning(ValidationWarning warning)
+        {
+            if (warning == null || string.IsNullOrEmpty(warning.NodeName))
+                return;
+
+            if (_nodes.TryGetValue(warning.NodeName, out var node))
+            {
+                CenterOnNode(node);
+                ClearSelection();
+                SelectNode(node);
+            }
+        }
+
+        /// <summary>
+        /// 居中显示指定节点
+        /// </summary>
+        public void CenterOnNode(FlowNode node)
+        {
+            if (node == null) return;
+
+            var bounds = node.GetBounds();
+            var nodeCenter = new PointF(
+                bounds.X + bounds.Width / 2,
+                bounds.Y + bounds.Height / 2
+            );
+
+            // 计算使节点居中所需的偏移量
+            var screenCenter = new PointF(this.Width / 2, this.Height / 2);
+            PanOffset = new PointF(
+                screenCenter.X - nodeCenter.X * ZoomFactor,
+                screenCenter.Y - nodeCenter.Y * ZoomFactor
+            );
+
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 获取下一个验证错误
+        /// </summary>
+        public ValidationError GetNextValidationError()
+        {
+            if (LastValidationResult == null || LastValidationResult.Errors.Count == 0)
+                return null;
+
+            // 如果没有选中节点，返回第一个错误
+            if (_selectedNodes.Count == 0)
+                return LastValidationResult.Errors.FirstOrDefault();
+
+            var currentNode = _selectedNodes.First();
+            var currentIndex = LastValidationResult.Errors.FindIndex(e => e.NodeName == currentNode.Data?.Name);
+
+            // 返回下一个错误（循环）
+            if (currentIndex < 0 || currentIndex >= LastValidationResult.Errors.Count - 1)
+                return LastValidationResult.Errors.FirstOrDefault();
+
+            return LastValidationResult.Errors[currentIndex + 1];
         }
 
         /// <summary>
@@ -2627,7 +3615,105 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
             }
 
+            // 绘制验证高亮
+            if (ShowValidationResults && _validationHighlights != null && _validationHighlights.Count > 0)
+            {
+                RenderValidationHighlights(g);
+            }
+
             g.Restore(state);
+        }
+
+        /// <summary>
+        /// 渲染验证高亮
+        /// </summary>
+        private void RenderValidationHighlights(Graphics g)
+        {
+            foreach (var highlight in _validationHighlights)
+            {
+                if (highlight.NodeName == null || !_nodes.TryGetValue(highlight.NodeName, out var node))
+                    continue;
+
+                var bounds = node.GetBounds();
+                var highlightColor = GetHighlightTypeColor(highlight.Type);
+                var borderWidth = 2f / Transform.Zoom;
+
+                // 绘制节点边框高亮
+                using (var pen = new Pen(highlightColor, borderWidth))
+                {
+                    // 绘制发光效果
+                    for (int i = 3; i >= 1; i--)
+                    {
+                        var alpha = (int)(highlightColor.A * (1.0f - i * 0.25f));
+                        using (var glowPen = new Pen(Color.FromArgb(alpha, highlightColor), borderWidth + i * 2))
+                        {
+                            var glowRect = RectangleF.Inflate(bounds, i, i);
+                            g.DrawRectangle(glowPen, glowRect.X, glowRect.Y, glowRect.Width, glowRect.Height);
+                        }
+                    }
+
+                    // 绘制主边框
+                    g.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+                }
+
+                // 绘制错误/警告图标
+                DrawValidationIcon(g, bounds, highlight.Type, highlight.Message);
+            }
+        }
+
+        /// <summary>
+        /// 获取高亮类型颜色
+        /// </summary>
+        private Color GetHighlightTypeColor(HighlightType type)
+        {
+            switch (type)
+            {
+                case HighlightType.Error:
+                    return Color.FromArgb(239, 68, 68); // 红色
+                case HighlightType.Warning:
+                    return Color.FromArgb(234, 179, 8); // 黄色
+                case HighlightType.Info:
+                    return Color.FromArgb(59, 130, 246); // 蓝色
+                default:
+                    return Color.Gray;
+            }
+        }
+
+        /// <summary>
+        /// 绘制验证图标
+        /// </summary>
+        private void DrawValidationIcon(Graphics g, RectangleF nodeBounds, HighlightType type, string message)
+        {
+            var iconSize = 20f / Transform.Zoom;
+            var iconRect = new RectangleF(
+                nodeBounds.Right - iconSize / 2,
+                nodeBounds.Top - iconSize / 2,
+                iconSize,
+                iconSize
+            );
+
+            var color = GetHighlightTypeColor(type);
+
+            // 绘制圆形背景
+            using (var brush = new SolidBrush(color))
+            {
+                g.FillEllipse(brush, iconRect);
+            }
+
+            // 绘制图标符号
+            string symbol = type == HighlightType.Error ? "!" : 
+                           type == HighlightType.Warning ? "?" : "i";
+            
+            using (var font = new Font("Segoe UI", iconSize * 0.5f, FontStyle.Bold))
+            using (var brush = new SolidBrush(Color.White))
+            {
+                var sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                g.DrawString(symbol, font, brush, iconRect, sf);
+            }
         }
 
         /// <summary>

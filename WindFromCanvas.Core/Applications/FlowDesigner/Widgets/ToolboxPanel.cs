@@ -778,7 +778,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
             {
                 _draggingNodeType = item.Type;
                 NodeDragStarted?.Invoke(this, item);
-                this.DoDragDrop(item, DragDropEffects.Copy);
+                // 传递 FlowNodeType 类型以便 FlowDesignerCanvas 识别
+                this.DoDragDrop(item.Type, DragDropEffects.Copy);
             }
         }
 

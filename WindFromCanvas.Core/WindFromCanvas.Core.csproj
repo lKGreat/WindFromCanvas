@@ -118,6 +118,9 @@
     <Compile Include="Applications\FlowDesigner\Commands\FlowOperationCommand.cs" />
     <Compile Include="Applications\FlowDesigner\Clipboard\FlowClipboard.cs" />
     <Compile Include="Applications\FlowDesigner\Serialization\FlowSerializer.cs" />
+    <Compile Include="Applications\FlowDesigner\Serialization\FlowDocumentConverter.cs" />
+    <!-- Execution -->
+    <Compile Include="Applications\FlowDesigner\Execution\FlowExecutor.cs" />
     <!-- Core Models -->
     <Compile Include="Applications\FlowDesigner\Core\Models\IStep.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Models\FlowAction.cs" />
