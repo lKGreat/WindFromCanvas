@@ -97,11 +97,18 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Models
         [DataMember]
         public NodeStatus Status { get; set; } = NodeStatus.None;
 
+        /// <summary>
+        /// 锚点列表（连接点）
+        /// </summary>
+        [DataMember]
+        public List<AnchorPoint> Anchors { get; set; }
+
         public FlowNodeData()
         {
             Settings = new Dictionary<string, object>();
             Valid = true;
             Skip = false;
+            Anchors = new List<AnchorPoint>();
         }
 
         /// <summary>

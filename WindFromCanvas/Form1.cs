@@ -12,6 +12,12 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Widgets;
 using WindFromCanvas.Core.Applications.FlowDesigner.Themes;
 using WindFromCanvas.Core.Applications.FlowDesigner.Animation;
 using WindFromCanvas.Core.Applications.FlowDesigner.Utils;
+using WindFromCanvas.Core.Applications.FlowDesigner.Canvas;
+using WindFromCanvas.Core.Applications.FlowDesigner.State;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Operations;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Utils;
 
 namespace WindFromCanvas
 {
@@ -27,6 +33,14 @@ namespace WindFromCanvas
         private MenuStrip _menuStrip;
         private ToolStripMenuItem _themeMenu;
         private ShortcutManager _shortcutManager;
+        
+        // 新的流程设计器（基于 FlowVersion）
+        private FlowCanvas _newFlowCanvas;
+        private BuilderStateStore _stateStore;
+        private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.StepSettingsPanel _stepSettingsPanel;
+        private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.FlowVersionsList _versionsList;
+        private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.RunsList _runsList;
+        private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.RunDetailsPanel _runDetailsPanel;
 
         public Form1()
         {
@@ -34,6 +48,7 @@ namespace WindFromCanvas
             SetupMenu();
             SetupDemo();
             SetupFlowDesigner();
+            SetupNewFlowDesigner(); // 添加新的流程设计器示例
         }
 
         private void SetupMenu()
@@ -71,9 +86,198 @@ namespace WindFromCanvas
                 MessageBox.Show("WindFromCanvas 流程设计器\n\n基于Activepieces设计\n支持35+功能特性", 
                     "关于", MessageBoxButtons.OK, MessageBoxIcon.Information));
             
-            _menuStrip.Items.AddRange(new[] { fileMenu, viewMenu, toolsMenu, helpMenu });
+            // 演示菜单
+            var demoMenu = new ToolStripMenuItem("演示(&D)");
+            demoMenu.DropDownItems.Add("创建新流程设计器", null, (s, e) => CreateCompleteFlowDesignerDemo());
+            demoMenu.DropDownItems.Add("演示操作命令", null, (s, e) => ShowOperationDemo());
+            demoMenu.DropDownItems.Add("演示版本管理", null, (s, e) => ShowVersionDemo());
+            demoMenu.DropDownItems.Add("演示运行系统", null, (s, e) => ShowRunDemo());
+            demoMenu.DropDownItems.Add(new ToolStripSeparator());
+            demoMenu.DropDownItems.Add("LogicFlow架构演示", null, (s, e) => ShowLogicFlowDemo());
+            
+            _menuStrip.Items.AddRange(new[] { fileMenu, viewMenu, toolsMenu, demoMenu, helpMenu });
             this.MainMenuStrip = _menuStrip;
             this.Controls.Add(_menuStrip);
+        }
+
+        /// <summary>
+        /// 显示操作命令演示
+        /// </summary>
+        private void ShowOperationDemo()
+        {
+            var demoForm = new Form
+            {
+                Text = "操作命令演示",
+                Size = new Size(600, 400),
+                StartPosition = FormStartPosition.CenterParent
+            };
+
+            var textBox = new TextBox
+            {
+                Multiline = true,
+                Dock = DockStyle.Fill,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("Consolas", 9),
+                ReadOnly = true,
+                Text = @"操作命令演示
+================
+
+1. 添加动作 (ADD_ACTION)
+   - 在指定步骤后添加新动作
+   - 支持添加到循环内 (INSIDE_LOOP)
+   - 支持添加到分支内 (INSIDE_BRANCH)
+
+2. 删除动作 (DELETE_ACTION)
+   - 删除指定步骤
+   - 自动处理连接关系
+
+3. 移动动作 (MOVE_ACTION)
+   - 将动作移动到新位置
+   - 支持移动到循环或分支内
+
+4. 更新动作 (UPDATE_ACTION)
+   - 更新动作的属性和设置
+
+5. 复制动作 (DUPLICATE_ACTION)
+   - 复制动作并生成新名称
+
+6. 分支操作
+   - ADD_BRANCH: 添加分支
+   - DELETE_BRANCH: 删除分支
+   - DUPLICATE_BRANCH: 复制分支
+   - MOVE_BRANCH: 移动分支
+
+7. 跳过功能 (SET_SKIP_ACTION)
+   - 跳过/取消跳过动作
+
+8. 备注操作
+   - ADD_NOTE: 添加备注
+   - UPDATE_NOTE: 更新备注
+   - DELETE_NOTE: 删除备注
+
+所有操作都支持撤销/重做 (Ctrl+Z / Ctrl+Y)"
+            };
+
+            demoForm.Controls.Add(textBox);
+            demoForm.ShowDialog(this);
+        }
+
+        /// <summary>
+        /// 显示版本管理演示
+        /// </summary>
+        private void ShowVersionDemo()
+        {
+            var demoForm = new Form
+            {
+                Text = "版本管理演示",
+                Size = new Size(600, 400),
+                StartPosition = FormStartPosition.CenterParent
+            };
+
+            var textBox = new TextBox
+            {
+                Multiline = true,
+                Dock = DockStyle.Fill,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("Consolas", 9),
+                ReadOnly = true,
+                Text = @"版本管理演示
+================
+
+功能：
+1. 保存版本
+   - VersionManager.Instance.SaveVersion(version)
+
+2. 获取所有版本
+   - VersionManager.Instance.GetVersions(flowId)
+
+3. 创建新版本（从现有版本复制）
+   - VersionManager.Instance.CreateVersionFrom(flowId, sourceVersionId, newDisplayName)
+
+4. 发布版本
+   - VersionManager.Instance.PublishVersion(flowId, versionId)
+
+5. 使用版本作为草稿
+   - VersionManager.Instance.UseAsDraft(flowId, versionId)
+
+版本状态：
+- DRAFT: 草稿
+- LOCKED: 已锁定（已发布）
+
+UI组件：
+- FlowVersionsList: 版本列表组件
+- 支持查看、切换、恢复版本"
+            };
+
+            demoForm.Controls.Add(textBox);
+            demoForm.ShowDialog(this);
+        }
+
+        /// <summary>
+        /// 显示运行系统演示
+        /// </summary>
+        private void ShowRunDemo()
+        {
+            var demoForm = new Form
+            {
+                Text = "运行系统演示",
+                Size = new Size(600, 400),
+                StartPosition = FormStartPosition.CenterParent
+            };
+
+            var textBox = new TextBox
+            {
+                Multiline = true,
+                Dock = DockStyle.Fill,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("Consolas", 9),
+                ReadOnly = true,
+                Text = @"运行系统演示
+================
+
+功能：
+1. 运行列表 (RunsList)
+   - 显示流程运行历史
+   - 显示运行状态、时间、持续时间
+
+2. 运行详情 (RunDetailsPanel)
+   - 显示步骤执行顺序
+   - 显示每个步骤的输入/输出
+   - 显示执行时间和错误信息
+
+运行状态：
+- RUNNING: 运行中
+- SUCCESS: 成功
+- FAILED: 失败
+
+使用示例：
+var run = new FlowRun
+{
+    Status = FlowRunStatus.SUCCESS,
+    StartTime = DateTime.Now,
+    Duration = TimeSpan.FromSeconds(30),
+    StepsExecuted = 3
+};
+
+run.StepOutputs[""step1""] = new StepOutput
+{
+    Input = new { data = ""test"" },
+    Output = new { result = ""processed"" },
+    Success = true
+};"
+            };
+
+            demoForm.Controls.Add(textBox);
+            demoForm.ShowDialog(this);
+        }
+
+        /// <summary>
+        /// 显示LogicFlow架构演示
+        /// </summary>
+        private void ShowLogicFlowDemo()
+        {
+            var demoForm = new LogicFlowDemo();
+            demoForm.ShowDialog(this);
         }
 
         private void SetupFlowDesigner()
@@ -251,6 +455,428 @@ namespace WindFromCanvas
             var updateTimer = new Timer { Interval = 100 };
             updateTimer.Tick += (s, e) => _controlPanel?.UpdateZoomLabel();
             updateTimer.Start();
+        }
+
+        /// <summary>
+        /// 设置新的流程设计器（基于 FlowVersion，匹配 Activepieces）
+        /// </summary>
+        private void SetupNewFlowDesigner()
+        {
+            // 初始化状态存储
+            _stateStore = BuilderStateStore.Instance;
+            
+            // 创建新的流程版本
+            var flowVersion = new FlowVersion
+            {
+                Id = Guid.NewGuid().ToString(),
+                FlowId = Guid.NewGuid().ToString(),
+                DisplayName = "示例流程",
+                Trigger = new EmptyTrigger
+                {
+                    Name = "trigger",
+                    DisplayName = "触发器"
+                },
+                State = FlowVersionState.DRAFT
+            };
+
+            // 初始化状态
+            _stateStore.Initialize(flowVersion, false);
+
+            // 注意：不在这里调用 CreateNewFlowDesignerDemo()
+            // 演示操作应该通过菜单项手动触发，避免在启动时执行过多操作
+        }
+
+        /// <summary>
+        /// 创建新的流程设计器演示
+        /// </summary>
+        private void CreateNewFlowDesignerDemo()
+        {
+            // 演示1: 创建流程版本并添加动作
+            DemoCreateFlowWithActions();
+
+            // 演示2: 使用操作命令添加动作
+            DemoAddActionOperation();
+
+            // 演示3: 使用操作命令添加分支
+            DemoAddBranchOperation();
+
+            // 演示4: 使用操作命令添加备注
+            DemoAddNoteOperation();
+
+            // 演示5: 使用快捷键
+            DemoShortcuts();
+
+            // 演示6: 使用上下文菜单
+            DemoContextMenu();
+
+            // 演示7: 版本管理
+            DemoVersionManagement();
+
+            // 演示8: 运行系统
+            DemoRunSystem();
+        }
+
+        /// <summary>
+        /// 演示1: 创建流程版本并添加动作
+        /// </summary>
+        private void DemoCreateFlowWithActions()
+        {
+            var flowVersion = _stateStore.Flow.FlowVersion;
+            var trigger = flowVersion.Trigger;
+
+            // 创建代码动作
+            var codeAction = new CodeAction
+            {
+                Name = "step1",
+                DisplayName = "处理数据",
+                Type = FlowActionType.CODE,
+                Settings = new CodeActionSettings
+                {
+                    SourceCode = new SourceCode
+                    {
+                        Code = "return { result: input.data }",
+                        PackageJson = "{}"
+                    }
+                }
+            };
+
+            // 创建循环动作
+            var loopAction = new LoopOnItemsAction
+            {
+                Name = "step2",
+                DisplayName = "循环处理",
+                Type = FlowActionType.LOOP_ON_ITEMS,
+                Settings = new LoopOnItemsActionSettings
+                {
+                    Items = "{{trigger.body.items}}"
+                }
+            };
+
+            // 创建路由动作
+            var routerAction = new RouterAction
+            {
+                Name = "step3",
+                DisplayName = "条件路由",
+                Type = FlowActionType.ROUTER,
+                Settings = new RouterActionSettings
+                {
+                    ExecutionType = RouterExecutionType.EXECUTE_FIRST_MATCH,
+                    Branches = new System.Collections.Generic.List<WindFromCanvas.Core.Applications.FlowDesigner.Core.Models.RouterBranch>
+                    {
+                        new WindFromCanvas.Core.Applications.FlowDesigner.Core.Models.RouterBranch
+                        {
+                            BranchName = "条件1",
+                            BranchType = BranchExecutionType.CONDITION,
+                            Conditions = new System.Collections.Generic.List<System.Collections.Generic.List<BranchCondition>>
+                            {
+                                new System.Collections.Generic.List<BranchCondition>
+                                {
+                                    new BranchCondition
+                                    {
+                                        FirstValue = "{{step1.result}}",
+                                        SecondValue = "success",
+                                        Operator = BranchOperator.TEXT_EXACTLY_MATCHES
+                                    }
+                                }
+                            }
+                        },
+                        new WindFromCanvas.Core.Applications.FlowDesigner.Core.Models.RouterBranch
+                        {
+                            BranchName = "回退",
+                            BranchType = BranchExecutionType.FALLBACK
+                        }
+                    }
+                },
+                Children = new System.Collections.Generic.List<FlowAction> { null, null }
+            };
+
+            // 连接动作
+            trigger.NextAction = codeAction;
+            codeAction.NextAction = loopAction;
+            loopAction.NextAction = routerAction;
+
+            // 更新状态
+            _stateStore.Flow.FlowVersion = flowVersion;
+            _stateStore.OnPropertyChanged(nameof(BuilderStateStore.Flow));
+        }
+
+        /// <summary>
+        /// 演示2: 使用操作命令添加动作
+        /// </summary>
+        private void DemoAddActionOperation()
+        {
+            var operation = new FlowOperationRequest
+            {
+                Type = FlowOperationType.ADD_ACTION,
+                Request = new AddActionRequest
+                {
+                    Action = new CodeAction
+                    {
+                        Name = "newStep",
+                        DisplayName = "新步骤",
+                        Type = FlowActionType.CODE,
+                        Settings = new CodeActionSettings
+                        {
+                            SourceCode = new SourceCode
+                            {
+                                Code = "console.log('Hello World');",
+                                PackageJson = "{}"
+                            }
+                        }
+                    },
+                    ParentStepName = "step1",
+                    StepLocationRelativeToParent = StepLocationRelativeToParent.AFTER
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 演示3: 使用操作命令添加分支
+        /// </summary>
+        private void DemoAddBranchOperation()
+        {
+            var operation = new FlowOperationRequest
+            {
+                Type = FlowOperationType.ADD_BRANCH,
+                Request = new AddBranchRequest
+                {
+                    StepName = "step3",
+                    BranchIndex = 1,
+                    BranchName = "新分支",
+                    Conditions = new System.Collections.Generic.List<System.Collections.Generic.List<BranchCondition>>
+                    {
+                        new System.Collections.Generic.List<BranchCondition>
+                        {
+                            new BranchCondition
+                            {
+                                FirstValue = "{{step1.result}}",
+                                SecondValue = "error",
+                                Operator = BranchOperator.TEXT_CONTAINS
+                            }
+                        }
+                    }
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 演示4: 使用操作命令添加备注
+        /// </summary>
+        private void DemoAddNoteOperation()
+        {
+            var operation = new FlowOperationRequest
+            {
+                Type = FlowOperationType.ADD_NOTE,
+                Request = new AddNoteRequest
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Content = "这是一个演示备注\n\n功能说明：\n- 支持添加备注\n- 支持编辑备注\n- 支持移动备注\n- 支持删除备注",
+                    Position = new PointF(500, 300),
+                    Size = new SizeF(200, 150),
+                    Color = NoteColorVariant.Green
+                }
+            };
+
+            _stateStore.ApplyOperation(operation);
+        }
+
+        /// <summary>
+        /// 演示5: 使用快捷键
+        /// </summary>
+        private void DemoShortcuts()
+        {
+            // 快捷键已在 ShortcutManager 中注册
+            // Ctrl+C: 复制选中节点
+            // Ctrl+V: 粘贴节点
+            // Shift+Delete: 删除选中节点
+            // Ctrl+E: 跳过/取消跳过选中节点
+            // Ctrl+M: 切换小地图
+            // Escape: 退出拖拽
+
+            // 示例：注册自定义快捷键
+            var shortcutManager = new WindFromCanvas.Core.Applications.FlowDesigner.Interaction.ShortcutManager(_stateStore);
+            // 快捷键已自动注册，无需手动调用
+        }
+
+        /// <summary>
+        /// 演示6: 使用上下文菜单
+        /// </summary>
+        private void DemoContextMenu()
+        {
+            // 上下文菜单功能已集成到 FlowCanvas
+            // 右键点击节点或空白区域即可显示菜单
+            // 菜单项包括：
+            // - Replace（替换）
+            // - Copy（复制）
+            // - Duplicate（复制）
+            // - Skip/Unskip（跳过/取消跳过）
+            // - Paste After（粘贴在后面）
+            // - Paste Inside Loop（粘贴到循环内）
+            // - Paste Inside Branch（粘贴到分支内）
+            // - Delete（删除）
+        }
+
+        /// <summary>
+        /// 演示7: 版本管理
+        /// </summary>
+        private void DemoVersionManagement()
+        {
+            var versionManager = VersionManager.Instance;
+            var flowVersion = _stateStore.Flow.FlowVersion;
+
+            // 保存当前版本
+            versionManager.SaveVersion(flowVersion);
+
+            // 创建新版本（从当前版本复制）
+            var newVersion = versionManager.CreateVersionFrom(
+                flowVersion.FlowId,
+                flowVersion.Id,
+                "版本 2"
+            );
+
+            // 获取所有版本
+            var versions = versionManager.GetVersions(flowVersion.FlowId);
+            Console.WriteLine($"流程共有 {versions.Count} 个版本");
+
+            // 发布版本
+            versionManager.PublishVersion(flowVersion.FlowId, flowVersion.Id);
+
+            // 使用版本作为草稿
+            var draftVersion = versionManager.UseAsDraft(flowVersion.FlowId, flowVersion.Id);
+        }
+
+        /// <summary>
+        /// 演示8: 运行系统
+        /// </summary>
+        private void DemoRunSystem()
+        {
+            // 创建模拟运行记录
+            var run = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.FlowRun
+            {
+                Id = Guid.NewGuid().ToString(),
+                FlowId = _stateStore.Flow.FlowVersion.FlowId,
+                FlowVersionId = _stateStore.Flow.FlowVersion.Id,
+                Status = FlowRunStatus.SUCCESS,
+                StartTime = DateTime.Now.AddMinutes(-5),
+                EndTime = DateTime.Now,
+                Duration = TimeSpan.FromSeconds(30),
+                StepsExecuted = 3
+            };
+
+            // 添加步骤输出
+            run.StepOutputs["step1"] = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.StepOutput
+            {
+                StepName = "step1",
+                Input = new { data = "test" },
+                Output = new { result = "processed" },
+                Success = true,
+                Duration = TimeSpan.FromMilliseconds(100)
+            };
+
+            run.StepOutputs["step2"] = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.StepOutput
+            {
+                StepName = "step2",
+                Input = new { items = new[] { "item1", "item2" } },
+                Output = new { processed = 2 },
+                Success = true,
+                Duration = TimeSpan.FromMilliseconds(500)
+            };
+
+            // 运行列表会自动显示运行记录
+            // 双击运行记录可以查看详情
+        }
+
+        /// <summary>
+        /// 演示：在新标签页中创建完整的流程设计器
+        /// </summary>
+        private void CreateCompleteFlowDesignerDemo()
+        {
+            try
+            {
+                // 确保状态存储已初始化
+                if (_stateStore == null)
+                {
+                    _stateStore = BuilderStateStore.Instance;
+                    if (_stateStore.Flow?.FlowVersion == null)
+                    {
+                        // 创建新的流程版本
+                        var flowVersion = new FlowVersion
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            FlowId = Guid.NewGuid().ToString(),
+                            DisplayName = "示例流程",
+                            Trigger = new EmptyTrigger
+                            {
+                                Name = "trigger",
+                                DisplayName = "触发器"
+                            },
+                            State = FlowVersionState.DRAFT
+                        };
+                        _stateStore.Initialize(flowVersion, false);
+                    }
+                }
+
+                // 创建新的标签页用于展示新的流程设计器
+                var newTabPage = new TabPage("新流程设计器");
+                newTabPage.UseVisualStyleBackColor = true;
+
+                // 创建分割容器
+                var mainSplitContainer = new SplitContainer
+                {
+                    Dock = DockStyle.Fill,
+                    Orientation = Orientation.Horizontal,
+                    SplitterDistance = 500,
+                    Parent = newTabPage
+                };
+
+                // 创建右侧分割容器（用于步骤设置和版本列表）
+                var rightSplitContainer = new SplitContainer
+                {
+                    Dock = DockStyle.Fill,
+                    Orientation = Orientation.Vertical,
+                    SplitterDistance = 300,
+                    Parent = mainSplitContainer.Panel2
+                };
+
+                // 创建新的 FlowCanvas
+                _newFlowCanvas = new WindFromCanvas.Core.Applications.FlowDesigner.Canvas.FlowCanvas();
+                _newFlowCanvas.Dock = DockStyle.Fill;
+                mainSplitContainer.Panel1.Controls.Add(_newFlowCanvas);
+
+                // 创建步骤设置面板
+                _stepSettingsPanel = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.StepSettingsPanel(_stateStore);
+                _stepSettingsPanel.Dock = DockStyle.Fill;
+                rightSplitContainer.Panel1.Controls.Add(_stepSettingsPanel);
+
+                // 创建版本列表
+                _versionsList = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.FlowVersionsList(_stateStore);
+                _versionsList.Dock = DockStyle.Fill;
+                _versionsList.VersionSelected += (s, version) =>
+                {
+                    if (_stateStore != null && version != null)
+                    {
+                        _stateStore.Flow.FlowVersion = version;
+                        _stateStore.OnPropertyChanged(nameof(BuilderStateStore.Flow));
+                    }
+                };
+                rightSplitContainer.Panel2.Controls.Add(_versionsList);
+
+                // 添加到标签控件
+                tabControl1.TabPages.Add(newTabPage);
+                tabControl1.SelectedTab = newTabPage;
+
+                MessageBox.Show("新流程设计器已创建！\n\n您可以通过菜单中的演示选项来测试各种功能。", 
+                    "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"创建流程设计器时出错：\n{ex.Message}\n\n堆栈跟踪：\n{ex.StackTrace}", 
+                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void RegisterShortcuts()

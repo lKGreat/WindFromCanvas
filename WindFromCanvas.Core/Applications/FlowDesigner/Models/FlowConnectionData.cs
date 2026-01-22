@@ -35,6 +35,18 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Models
         public string TargetPort { get; set; }
 
         /// <summary>
+        /// 源锚点ID（精确指定连接的锚点）
+        /// </summary>
+        [DataMember]
+        public string SourceAnchorId { get; set; }
+
+        /// <summary>
+        /// 目标锚点ID（精确指定连接的锚点）
+        /// </summary>
+        [DataMember]
+        public string TargetAnchorId { get; set; }
+
+        /// <summary>
         /// 连接标签/条件（用于分支节点）
         /// </summary>
         [DataMember]

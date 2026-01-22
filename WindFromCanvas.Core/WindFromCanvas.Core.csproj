@@ -175,6 +175,34 @@
     <Compile Include="Applications\FlowDesigner\Interaction\ClipboardManager.cs" />
     <!-- Widgets -->
     <Compile Include="Applications\FlowDesigner\Widgets\Minimap.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\StepSettingsPanel.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\DataSelector.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\FlowVersionsList.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\RunsList.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\RunDetailsPanel.cs" />
+    <Compile Include="Applications\FlowDesigner\Widgets\PieceSelector.cs" />
+    <!-- State -->
+    <Compile Include="Applications\FlowDesigner\State\VersionManager.cs" />
+    <!-- Algorithms -->
+    <Compile Include="Applications\FlowDesigner\Algorithms\AStarRouter.cs" />
+    <Compile Include="Applications\FlowDesigner\Algorithms\QuadTree.cs" />
+    <!-- Core Reactive -->
+    <Compile Include="Applications\FlowDesigner\Core\Reactive\ObservableProperty.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Reactive\ComputedProperty.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Reactive\ReactiveStore.cs" />
+    <!-- Plugins -->
+    <Compile Include="Applications\FlowDesigner\Plugins\IFlowPlugin.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\IPluginContext.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\PluginManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\PluginContext.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\BpmnPlugin\BpmnPlugin.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\BpmnPlugin\BpmnAdapter.cs" />
+    <!-- Rendering -->
+    <Compile Include="Applications\FlowDesigner\Rendering\RenderLayer.cs" />
+    <Compile Include="Applications\FlowDesigner\Rendering\RenderLayerManager.cs" />
+    <Compile Include="Applications\FlowDesigner\Rendering\LayeredRenderer.cs" />
+    <!-- Models -->
+    <Compile Include="Applications\FlowDesigner\Models\AnchorPoint.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Events\" />

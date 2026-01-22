@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
 using WindFromCanvas.Core.Applications.FlowDesigner.Serialization;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.State
