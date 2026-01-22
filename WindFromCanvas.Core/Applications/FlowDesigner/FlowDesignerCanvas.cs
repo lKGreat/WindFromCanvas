@@ -15,6 +15,8 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Serialization;
 using WindFromCanvas.Core.Applications.FlowDesigner.Utils;
 using WindFromCanvas.Core.Applications.FlowDesigner.Validation;
 using WindFromCanvas.Core.Applications.FlowDesigner.Animation;
+using WindFromCanvas.Core.Applications.FlowDesigner.Rendering;
+using WindFromCanvas.Core.Applications.FlowDesigner.State;
 using WindFromCanvas.Core.Events;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner
@@ -33,6 +35,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 坐标变换模型（管理缩放和平移）
         /// </summary>
         public TransformModel Transform { get; private set; }
+
+        /// <summary>
+        /// 分层渲染器（管理6层渲染）
+        /// </summary>
+        private LayeredRenderer _layeredRenderer;
 
         /// <summary>
         /// 所有节点
@@ -206,6 +213,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             // 初始化坐标变换模型
             Transform = new TransformModel();
             Transform.PropertyChanged += Transform_PropertyChanged;
+            
+            // 初始化分层渲染器
+            InitializeLayeredRenderer();
             
             // 订阅节点拖拽事件
             this.MouseDown += FlowDesignerCanvas_MouseDown;
@@ -817,162 +827,25 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            g.Clear(BackgroundColor);
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-            // 绘制网格（在变换之前）
-            if (ShowGrid)
+            // 计算视口（Canvas坐标系）
+            var viewport = GetVisibleCanvasBounds();
+
+            // 使用LayeredRenderer进行6层渲染
+            if (_layeredRenderer != null)
             {
-                DrawGrid(g);
+                _layeredRenderer.Render(g, viewport, Transform.Zoom);
             }
-
-            // 应用变换
-            g.TranslateTransform(PanOffset.X, PanOffset.Y);
-            g.ScaleTransform(ZoomFactor, ZoomFactor);
-
-            // 计算视口（世界坐标）
-            var viewport = new RectangleF(
-                -PanOffset.X / ZoomFactor,
-                -PanOffset.Y / ZoomFactor,
-                this.Width / ZoomFactor,
-                this.Height / ZoomFactor
-            );
-
-            // 绘制所有对象（节点和连接）
-            foreach (var obj in Objects.OrderBy(o => o.ZIndex))
+            else
             {
-                if (obj.Visible)
-                {
-                    // 视口裁剪：只渲染可见区域的对象
-                    if (EnableViewportCulling)
-                    {
-                        var bounds = obj.GetBounds();
-                        if (!viewport.IntersectsWith(bounds))
-                        {
-                            continue; // 跳过不可见的对象
-                        }
-                    }
-
-                    // 应用动画效果
-                    var node = obj as FlowNode;
-                    var connection = obj as Connections.FlowConnection;
-                    
-                    if (node != null)
-                    {
-                        var animations = AnimationManager.Instance.GetAnimations(node);
-                        if (animations.Count > 0)
-                        {
-                            ApplyNodeAnimations(g, node, animations);
-                        }
-                        else
-                        {
-                            obj.Draw(g);
-                        }
-                    }
-                    else if (connection != null)
-                    {
-                        // 应用连线动画
-                        var animations = AnimationManager.Instance.GetAnimations(connection);
-                        if (animations.Count > 0)
-                        {
-                            ApplyConnectionAnimations(g, connection, animations);
-                        }
-                        else
-                        {
-                            connection.Draw(g);
-                        }
-                    }
-                    else
-                    {
-                        obj.Draw(g);
-                    }
-                }
+                // 降级渲染（如果LayeredRenderer未初始化）
+                g.Clear(BackgroundColor);
             }
 
             // 记录性能
             PerformanceMonitor.Instance.RecordFrame();
-
-            // 重置变换
-            g.ResetTransform();
-
-            // 绘制框选矩形（优化视觉，参考Activepieces）
-            if (_isSelecting)
-            {
-                var rect = new RectangleF(
-                    Math.Min(_selectionStart.X, _selectionEnd.X),
-                    Math.Min(_selectionStart.Y, _selectionEnd.Y),
-                    Math.Abs(_selectionEnd.X - _selectionStart.X),
-                    Math.Abs(_selectionEnd.Y - _selectionStart.Y)
-                );
-
-                // 半透明蓝色背景（Activepieces风格）
-                using (var brush = new SolidBrush(Color.FromArgb(30, 59, 130, 246)))
-                {
-                    g.FillRectangle(brush, rect);
-                }
-                
-                // 高亮候选节点
-                var worldRect = new RectangleF(
-                    ScreenToWorld(new PointF(rect.X, rect.Y)),
-                    new SizeF(rect.Width / ZoomFactor, rect.Height / ZoomFactor)
-                );
-                
-                foreach (var node in _nodes.Values)
-                {
-                    var bounds = node.GetBounds();
-                    if (worldRect.IntersectsWith(bounds) || worldRect.Contains(bounds))
-                    {
-                        // 绘制节点高亮边框
-                        var screenBounds = new RectangleF(
-                            bounds.X * ZoomFactor + PanOffset.X,
-                            bounds.Y * ZoomFactor + PanOffset.Y,
-                            bounds.Width * ZoomFactor,
-                            bounds.Height * ZoomFactor
-                        );
-                        using (var pen = new Pen(Color.FromArgb(100, 59, 130, 246), 2f))
-                        {
-                            g.DrawRectangle(pen, screenBounds.X, screenBounds.Y, screenBounds.Width, screenBounds.Height);
-                        }
-                    }
-                }
-
-                // 绘制框选边框
-                using (var pen = new Pen(Color.FromArgb(59, 130, 246), 1.5f))
-                {
-                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
-                    g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
-                }
-            }
-
-            // 绘制拖拽预览（半透明预览层）
-            if (_draggingNode != null && _draggingNodes.Count > 0)
-            {
-                DrawDragPreview(g, _draggingNodes, _dragPreviewPosition);
-            }
-
-            // 绘制连接预览线（贝塞尔曲线）
-            if (_isCreatingConnection && _connectionSourceNode != null)
-            {
-                DrawConnectionPreview(g);
-            }
-
-            // 绘制对齐辅助线
-            if (ShowAlignmentGuides && _alignmentGuides.Count > 0)
-            {
-                g.TranslateTransform(PanOffset.X, PanOffset.Y);
-                g.ScaleTransform(ZoomFactor, ZoomFactor);
-
-                using (var pen = new Pen(Color.FromArgb(0, 120, 215), 1))
-                {
-                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
-                    foreach (var guide in _alignmentGuides)
-                    {
-                        g.DrawRectangle(pen, guide.X, guide.Y, guide.Width, guide.Height);
-                    }
-                }
-
-                g.ResetTransform();
-            }
         }
 
         /// <summary>
@@ -2303,6 +2176,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             if (e.PropertyName == nameof(TransformModel.Zoom) || 
                 e.PropertyName == nameof(TransformModel.Translation))
             {
+                // 标记所有层为脏，需要重绘
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Background);
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Grid);
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Connection);
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Node);
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Selection);
+                _layeredRenderer?.MarkLayerDirty(RenderLayerType.Overlay);
+                
                 // 触发重绘
                 Invalidate();
             }
@@ -2314,6 +2195,277 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         public RectangleF GetVisibleCanvasBounds()
         {
             return Transform.GetVisibleBounds(new SizeF(Width, Height));
+        }
+
+        #endregion
+
+        #region LayeredRenderer集成
+
+        /// <summary>
+        /// 初始化分层渲染器并注册渲染回调
+        /// </summary>
+        private void InitializeLayeredRenderer()
+        {
+            // 使用BuilderStateStore单例
+            var stateStore = BuilderStateStore.Instance;
+            _layeredRenderer = new LayeredRenderer(stateStore);
+            
+            // 注册自定义渲染回调（覆盖默认实现）
+            RegisterLayeredRenderCallbacks();
+        }
+
+        /// <summary>
+        /// 注册分层渲染回调
+        /// </summary>
+        private void RegisterLayeredRenderCallbacks()
+        {
+            var layerManager = typeof(LayeredRenderer)
+                .GetField("_layerManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.GetValue(_layeredRenderer) as RenderLayerManager;
+
+            if (layerManager == null)
+                return;
+
+            // 2.1.2 背景层渲染回调
+            layerManager.RegisterRenderCallback(RenderLayerType.Background, (g, viewport) =>
+            {
+                // 绘制背景色
+                g.Clear(BackgroundColor);
+            });
+
+            // 2.1.3 网格层渲染回调
+            layerManager.RegisterRenderCallback(RenderLayerType.Grid, (g, viewport) =>
+            {
+                if (ShowGrid)
+                {
+                    RenderGridLayer(g, viewport);
+                }
+            });
+
+            // 2.1.4 连线层渲染回调
+            layerManager.RegisterRenderCallback(RenderLayerType.Connection, (g, viewport) =>
+            {
+                RenderConnectionLayer(g, viewport);
+            });
+
+            // 2.1.5 节点层渲染回调
+            layerManager.RegisterRenderCallback(RenderLayerType.Node, (g, viewport) =>
+            {
+                RenderNodeLayer(g, viewport);
+            });
+
+            // 2.1.6 选择层渲染回调
+            layerManager.RegisterRenderCallback(RenderLayerType.Selection, (g, viewport) =>
+            {
+                RenderSelectionLayer(g, viewport);
+            });
+
+            // 2.1.7 覆盖层渲染回调（对齐线/预览）
+            layerManager.RegisterRenderCallback(RenderLayerType.Overlay, (g, viewport) =>
+            {
+                RenderOverlayLayer(g, viewport);
+            });
+        }
+
+        /// <summary>
+        /// 渲染网格层
+        /// </summary>
+        private void RenderGridLayer(Graphics g, RectangleF viewport)
+        {
+            const float gridSize = 20f;
+            using (var pen = new Pen(Color.FromArgb(230, 230, 230), 1f))
+            {
+                // 计算网格起始位置（Canvas坐标）
+                float startX = (float)(Math.Floor(viewport.Left / gridSize) * gridSize);
+                float startY = (float)(Math.Floor(viewport.Top / gridSize) * gridSize);
+
+                // 绘制垂直线
+                for (float x = startX; x <= viewport.Right; x += gridSize)
+                {
+                    var clientStart = Transform.CanvasToClient(x, viewport.Top);
+                    var clientEnd = Transform.CanvasToClient(x, viewport.Bottom);
+                    g.DrawLine(pen, clientStart, clientEnd);
+                }
+
+                // 绘制水平线
+                for (float y = startY; y <= viewport.Bottom; y += gridSize)
+                {
+                    var clientStart = Transform.CanvasToClient(viewport.Left, y);
+                    var clientEnd = Transform.CanvasToClient(viewport.Right, y);
+                    g.DrawLine(pen, clientStart, clientEnd);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 渲染连线层
+        /// </summary>
+        private void RenderConnectionLayer(Graphics g, RectangleF viewport)
+        {
+            // 应用Transform变换到Graphics
+            var state = g.Save();
+            g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
+            g.ScaleTransform(Transform.Zoom, Transform.Zoom);
+
+            // 绘制所有连线
+            foreach (var connection in _connections.Values)
+            {
+                if (connection != null && connection.Visible)
+                {
+                    // 简单的边界检查（可以优化）
+                    connection.Draw(g);
+                }
+            }
+
+            g.Restore(state);
+        }
+
+        /// <summary>
+        /// 渲染节点层
+        /// </summary>
+        private void RenderNodeLayer(Graphics g, RectangleF viewport)
+        {
+            // 应用Transform变换到Graphics
+            var state = g.Save();
+            g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
+            g.ScaleTransform(Transform.Zoom, Transform.Zoom);
+
+            // 按ZIndex排序绘制节点
+            var sortedNodes = _nodes.Values.OrderBy(n => n.ZIndex).ToList();
+            
+            foreach (var node in sortedNodes)
+            {
+                if (node != null && node.Visible)
+                {
+                    // 视口裁剪：只渲染可见区域的节点
+                    if (EnableViewportCulling)
+                    {
+                        var bounds = node.GetBounds();
+                        if (!viewport.IntersectsWith(bounds))
+                        {
+                            continue;
+                        }
+                    }
+
+                    // 绘制节点
+                    node.Draw(g);
+                }
+            }
+
+            g.Restore(state);
+        }
+
+        /// <summary>
+        /// 渲染选择层
+        /// </summary>
+        private void RenderSelectionLayer(Graphics g, RectangleF viewport)
+        {
+            // 应用Transform变换到Graphics
+            var state = g.Save();
+            g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
+            g.ScaleTransform(Transform.Zoom, Transform.Zoom);
+
+            // 绘制选中节点的高亮边框
+            if (_selectedNodes.Count > 0)
+            {
+                using (var pen = new Pen(Color.FromArgb(59, 130, 246), 2f / Transform.Zoom))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    
+                    foreach (var node in _selectedNodes)
+                    {
+                        if (node != null && node.Visible)
+                        {
+                            var bounds = node.GetBounds();
+                            g.DrawRectangle(pen, bounds.X - 2, bounds.Y - 2, 
+                                bounds.Width + 4, bounds.Height + 4);
+                        }
+                    }
+                }
+            }
+
+            // 绘制框选矩形
+            if (_isSelecting)
+            {
+                using (var pen = new Pen(Color.FromArgb(100, 59, 130, 246), 1f / Transform.Zoom))
+                using (var brush = new SolidBrush(Color.FromArgb(30, 59, 130, 246)))
+                {
+                    var selRect = GetNormalizedRectangle(_selectionStart, _selectionEnd);
+                    g.FillRectangle(brush, selRect);
+                    g.DrawRectangle(pen, selRect.X, selRect.Y, selRect.Width, selRect.Height);
+                }
+            }
+
+            g.Restore(state);
+        }
+
+        /// <summary>
+        /// 渲染覆盖层（对齐线、拖拽预览等）
+        /// </summary>
+        private void RenderOverlayLayer(Graphics g, RectangleF viewport)
+        {
+            // 应用Transform变换到Graphics
+            var state = g.Save();
+            g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
+            g.ScaleTransform(Transform.Zoom, Transform.Zoom);
+
+            // 绘制拖拽预览
+            if (_draggingNode != null && _dragPreviewPosition != PointF.Empty)
+            {
+                using (var brush = new SolidBrush(Color.FromArgb(100, Color.LightBlue)))
+                using (var pen = new Pen(Color.FromArgb(150, Color.Blue), 1f / Transform.Zoom))
+                {
+                    var bounds = _draggingNode.GetBounds();
+                    var previewRect = new RectangleF(
+                        _dragPreviewPosition.X,
+                        _dragPreviewPosition.Y,
+                        bounds.Width,
+                        bounds.Height);
+                    g.FillRectangle(brush, previewRect);
+                    g.DrawRectangle(pen, previewRect.X, previewRect.Y, 
+                        previewRect.Width, previewRect.Height);
+                }
+            }
+
+            // 绘制连线预览
+            if (_isCreatingConnection && _connectionSourceNode != null)
+            {
+                using (var pen = new Pen(Color.FromArgb(150, 100, 100, 100), 2f / Transform.Zoom))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    var sourceBounds = _connectionSourceNode.GetBounds();
+                    var sourceCenter = new PointF(
+                        sourceBounds.X + sourceBounds.Width / 2,
+                        sourceBounds.Y + sourceBounds.Height / 2);
+                    g.DrawLine(pen, sourceCenter, _connectionPreviewEnd);
+                }
+            }
+
+            // TODO: 绘制对齐线（NodeAlignmentHelper集成后实现）
+            // 这里预留对齐线的渲染逻辑
+
+            g.Restore(state);
+        }
+
+        /// <summary>
+        /// 标记特定层需要重绘
+        /// </summary>
+        public void MarkLayerDirty(RenderLayerType layer)
+        {
+            _layeredRenderer?.MarkLayerDirty(layer);
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 获取标准化矩形（确保宽高为正）
+        /// </summary>
+        private RectangleF GetNormalizedRectangle(PointF start, PointF end)
+        {
+            float x = Math.Min(start.X, end.X);
+            float y = Math.Min(start.Y, end.Y);
+            float width = Math.Abs(end.X - start.X);
+            float height = Math.Abs(end.Y - start.Y);
+            return new RectangleF(x, y, width, height);
         }
 
         #endregion
