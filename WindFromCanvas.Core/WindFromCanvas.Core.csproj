@@ -129,6 +129,10 @@
     <!-- Core Operations -->
     <Compile Include="Applications\FlowDesigner\Core\Operations\IFlowOperation.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Operations\FlowOperationExecutor.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Operations\AddActionOperation.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Operations\DeleteActionOperation.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Operations\MoveActionOperation.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Operations\UpdateActionOperation.cs" />
     <!-- Core Utils -->
     <Compile Include="Applications\FlowDesigner\Core\Utils\IdGenerator.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Utils\FlowStructureUtil.cs" />

@@ -12,6 +12,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
     public static class NodeAlignmentHelper
     {
         /// <summary>
+        /// 3.4.4 对齐吸附阈值（1像素精度）
+        /// </summary>
+        public const float SnapThreshold = 1f;
+
+        /// <summary>
+        /// 对齐线检测阈值
+        /// </summary>
+        public const float AlignmentDetectionThreshold = 5f;
+
+        /// <summary>
         /// 对齐方式
         /// </summary>
         public enum AlignmentType
@@ -31,6 +41,17 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
         {
             Horizontal, // 水平均匀分布
             Vertical    // 垂直均匀分布
+        }
+
+        /// <summary>
+        /// 对齐线信息（用于渲染）
+        /// </summary>
+        public class AlignmentGuide
+        {
+            public AlignmentType Type { get; set; }
+            public float Position { get; set; }
+            public PointF Start { get; set; }
+            public PointF End { get; set; }
         }
 
         /// <summary>
@@ -150,7 +171,106 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
         }
 
         /// <summary>
-        /// 获取对齐辅助线
+        /// 3.4.2 / 3.4.3 获取对齐辅助线（中心线和边框对齐检测）
+        /// </summary>
+        public static List<AlignmentGuide> GetAlignmentGuides(IEnumerable<FlowNode> nodes, FlowNode draggingNode, RectangleF viewport)
+        {
+            var guides = new List<AlignmentGuide>();
+            if (nodes == null || draggingNode == null) return guides;
+
+            var nodeList = nodes.Where(n => n != draggingNode).ToList();
+            if (nodeList.Count == 0) return guides;
+
+            var draggingBounds = draggingNode.GetBounds();
+
+            foreach (var node in nodeList)
+            {
+                var bounds = node.GetBounds();
+
+                // 3.4.2 中心线对齐检测
+                // 水平中心对齐线
+                var nodeCenterX = bounds.Left + bounds.Width / 2;
+                var draggingCenterX = draggingBounds.Left + draggingBounds.Width / 2;
+                if (Math.Abs(nodeCenterX - draggingCenterX) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.CenterX,
+                        Position = nodeCenterX,
+                        Start = new PointF(nodeCenterX, viewport.Top),
+                        End = new PointF(nodeCenterX, viewport.Bottom)
+                    });
+                }
+
+                // 垂直中心对齐线
+                var nodeCenterY = bounds.Top + bounds.Height / 2;
+                var draggingCenterY = draggingBounds.Top + draggingBounds.Height / 2;
+                if (Math.Abs(nodeCenterY - draggingCenterY) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.CenterY,
+                        Position = nodeCenterY,
+                        Start = new PointF(viewport.Left, nodeCenterY),
+                        End = new PointF(viewport.Right, nodeCenterY)
+                    });
+                }
+
+                // 3.4.3 边框对齐检测
+                // 左对齐线
+                if (Math.Abs(bounds.Left - draggingBounds.Left) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.Left,
+                        Position = bounds.Left,
+                        Start = new PointF(bounds.Left, viewport.Top),
+                        End = new PointF(bounds.Left, viewport.Bottom)
+                    });
+                }
+
+                // 右对齐线
+                if (Math.Abs(bounds.Right - draggingBounds.Right) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.Right,
+                        Position = bounds.Right,
+                        Start = new PointF(bounds.Right, viewport.Top),
+                        End = new PointF(bounds.Right, viewport.Bottom)
+                    });
+                }
+
+                // 顶对齐线
+                if (Math.Abs(bounds.Top - draggingBounds.Top) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.Top,
+                        Position = bounds.Top,
+                        Start = new PointF(viewport.Left, bounds.Top),
+                        End = new PointF(viewport.Right, bounds.Top)
+                    });
+                }
+
+                // 底对齐线
+                if (Math.Abs(bounds.Bottom - draggingBounds.Bottom) < AlignmentDetectionThreshold)
+                {
+                    guides.Add(new AlignmentGuide
+                    {
+                        Type = AlignmentType.Bottom,
+                        Position = bounds.Bottom,
+                        Start = new PointF(viewport.Left, bounds.Bottom),
+                        End = new PointF(viewport.Right, bounds.Bottom)
+                    });
+                }
+            }
+
+            return guides;
+        }
+
+        /// <summary>
+        /// 3.4.2 / 3.4.3 / 3.4.4 获取对齐辅助线（旧接口，保持兼容）
         /// </summary>
         public static List<RectangleF> GetAlignmentGuides(IEnumerable<FlowNode> nodes, FlowNode draggingNode)
         {
@@ -162,32 +282,32 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
 
             var draggingBounds = draggingNode.GetBounds();
             const float guideThickness = 1f;
-            const float guideLength = 1000f; // 辅助线长度
+            const float guideLength = 10000f; // 辅助线长度
 
             foreach (var node in nodeList)
             {
                 var bounds = node.GetBounds();
 
                 // 左对齐线
-                if (Math.Abs(bounds.Left - draggingBounds.Left) < 5)
+                if (Math.Abs(bounds.Left - draggingBounds.Left) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(bounds.Left, -guideLength / 2, guideThickness, guideLength));
                 }
 
                 // 右对齐线
-                if (Math.Abs(bounds.Right - draggingBounds.Right) < 5)
+                if (Math.Abs(bounds.Right - draggingBounds.Right) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(bounds.Right, -guideLength / 2, guideThickness, guideLength));
                 }
 
                 // 顶对齐线
-                if (Math.Abs(bounds.Top - draggingBounds.Top) < 5)
+                if (Math.Abs(bounds.Top - draggingBounds.Top) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(-guideLength / 2, bounds.Top, guideLength, guideThickness));
                 }
 
                 // 底对齐线
-                if (Math.Abs(bounds.Bottom - draggingBounds.Bottom) < 5)
+                if (Math.Abs(bounds.Bottom - draggingBounds.Bottom) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(-guideLength / 2, bounds.Bottom, guideLength, guideThickness));
                 }
@@ -195,7 +315,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
                 // 水平中心对齐线
                 var nodeCenterX = bounds.Left + bounds.Width / 2;
                 var draggingCenterX = draggingBounds.Left + draggingBounds.Width / 2;
-                if (Math.Abs(nodeCenterX - draggingCenterX) < 5)
+                if (Math.Abs(nodeCenterX - draggingCenterX) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(nodeCenterX, -guideLength / 2, guideThickness, guideLength));
                 }
@@ -203,7 +323,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
                 // 垂直中心对齐线
                 var nodeCenterY = bounds.Top + bounds.Height / 2;
                 var draggingCenterY = draggingBounds.Top + draggingBounds.Height / 2;
-                if (Math.Abs(nodeCenterY - draggingCenterY) < 5)
+                if (Math.Abs(nodeCenterY - draggingCenterY) < AlignmentDetectionThreshold)
                 {
                     guides.Add(new RectangleF(-guideLength / 2, nodeCenterY, guideLength, guideThickness));
                 }
@@ -213,75 +333,78 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
         }
 
         /// <summary>
-        /// 自动吸附对齐
+        /// 3.4.4 / 3.4.6 自动吸附对齐（1像素阈值，支持多节点同时对齐）
         /// </summary>
-        public static void SnapToAlignment(FlowNode draggingNode, IEnumerable<FlowNode> otherNodes, float snapDistance = 5f)
+        public static void SnapToAlignment(FlowNode draggingNode, IEnumerable<FlowNode> otherNodes, float snapDistance = SnapThreshold)
         {
             if (draggingNode == null || otherNodes == null) return;
 
             var draggingBounds = draggingNode.GetBounds();
-            var minDistance = float.MaxValue;
             float? snapX = null;
             float? snapY = null;
+            float minXDistance = snapDistance;
+            float minYDistance = snapDistance;
 
             foreach (var node in otherNodes)
             {
                 var bounds = node.GetBounds();
 
-                // 检查左对齐
+                // 3.4.3 边框对齐检测
+                // 左对齐
                 var distLeft = Math.Abs(bounds.Left - draggingBounds.Left);
-                if (distLeft < snapDistance && distLeft < minDistance)
+                if (distLeft < minXDistance)
                 {
-                    minDistance = distLeft;
+                    minXDistance = distLeft;
                     snapX = bounds.Left;
                 }
 
-                // 检查右对齐
+                // 右对齐
                 var distRight = Math.Abs(bounds.Right - draggingBounds.Right);
-                if (distRight < snapDistance && distRight < minDistance)
+                if (distRight < minXDistance)
                 {
-                    minDistance = distRight;
+                    minXDistance = distRight;
                     snapX = bounds.Right - draggingNode.Width;
                 }
 
-                // 检查顶对齐
+                // 顶对齐
                 var distTop = Math.Abs(bounds.Top - draggingBounds.Top);
-                if (distTop < snapDistance && distTop < minDistance)
+                if (distTop < minYDistance)
                 {
-                    minDistance = distTop;
+                    minYDistance = distTop;
                     snapY = bounds.Top;
                 }
 
-                // 检查底对齐
+                // 底对齐
                 var distBottom = Math.Abs(bounds.Bottom - draggingBounds.Bottom);
-                if (distBottom < snapDistance && distBottom < minDistance)
+                if (distBottom < minYDistance)
                 {
-                    minDistance = distBottom;
+                    minYDistance = distBottom;
                     snapY = bounds.Bottom - draggingNode.Height;
                 }
 
-                // 检查水平中心对齐
+                // 3.4.2 中心线对齐检测
+                // 水平中心对齐
                 var nodeCenterX = bounds.Left + bounds.Width / 2;
                 var draggingCenterX = draggingBounds.Left + draggingBounds.Width / 2;
                 var distCenterX = Math.Abs(nodeCenterX - draggingCenterX);
-                if (distCenterX < snapDistance && distCenterX < minDistance)
+                if (distCenterX < minXDistance)
                 {
-                    minDistance = distCenterX;
+                    minXDistance = distCenterX;
                     snapX = nodeCenterX - draggingNode.Width / 2;
                 }
 
-                // 检查垂直中心对齐
+                // 垂直中心对齐
                 var nodeCenterY = bounds.Top + bounds.Height / 2;
                 var draggingCenterY = draggingBounds.Top + draggingBounds.Height / 2;
                 var distCenterY = Math.Abs(nodeCenterY - draggingCenterY);
-                if (distCenterY < snapDistance && distCenterY < minDistance)
+                if (distCenterY < minYDistance)
                 {
-                    minDistance = distCenterY;
+                    minYDistance = distCenterY;
                     snapY = nodeCenterY - draggingNode.Height / 2;
                 }
             }
 
-            // 应用吸附
+            // 3.4.4 应用1像素阈值吸附
             if (snapX.HasValue)
             {
                 draggingNode.X = snapX.Value;
@@ -289,6 +412,35 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Utils
             if (snapY.HasValue)
             {
                 draggingNode.Y = snapY.Value;
+            }
+        }
+
+        /// <summary>
+        /// 3.4.6 多节点同时对齐（批量吸附）
+        /// </summary>
+        public static void SnapMultipleNodesToAlignment(List<FlowNode> draggingNodes, IEnumerable<FlowNode> otherNodes, float snapDistance = SnapThreshold)
+        {
+            if (draggingNodes == null || draggingNodes.Count == 0)
+                return;
+
+            // 以第一个节点为基准计算偏移
+            var mainNode = draggingNodes[0];
+            var originalPosition = new PointF(mainNode.X, mainNode.Y);
+
+            // 对主节点进行吸附
+            SnapToAlignment(mainNode, otherNodes, snapDistance);
+
+            // 计算偏移量
+            var deltaX = mainNode.X - originalPosition.X;
+            var deltaY = mainNode.Y - originalPosition.Y;
+
+            // 应用相同的偏移到其他节点
+            for (int i = 1; i < draggingNodes.Count; i++)
+            {
+                var node = draggingNodes[i];
+                node.X += deltaX;
+                node.Y += deltaY;
+                node.UpdatePosition();
             }
         }
     }

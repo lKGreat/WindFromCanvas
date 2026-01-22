@@ -63,12 +63,34 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
                 _stateStore.Canvas.ShowMinimap = !_stateStore.Canvas.ShowMinimap;
             });
 
-            // Escape - 退出拖拽
+            // 3.5.5 Ctrl+A - 全选
+            RegisterShortcut(Keys.Control | Keys.A, () =>
+            {
+                SelectAllActions();
+            });
+
+            // 3.5.6 方向键 - 微调位置
+            RegisterShortcut(Keys.Left, () => MoveSelectedNodes(-1, 0));
+            RegisterShortcut(Keys.Right, () => MoveSelectedNodes(1, 0));
+            RegisterShortcut(Keys.Up, () => MoveSelectedNodes(0, -1));
+            RegisterShortcut(Keys.Down, () => MoveSelectedNodes(0, 1));
+
+            // Shift+方向键 - 快速移动（10像素）
+            RegisterShortcut(Keys.Shift | Keys.Left, () => MoveSelectedNodes(-10, 0));
+            RegisterShortcut(Keys.Shift | Keys.Right, () => MoveSelectedNodes(10, 0));
+            RegisterShortcut(Keys.Shift | Keys.Up, () => MoveSelectedNodes(0, -10));
+            RegisterShortcut(Keys.Shift | Keys.Down, () => MoveSelectedNodes(0, 10));
+
+            // Escape - 退出拖拽或清除选择
             RegisterShortcut(Keys.Escape, () =>
             {
                 if (_stateStore.Drag.IsDragging)
                 {
                     _stateStore.EndDrag();
+                }
+                else if (_stateStore.Selection.SelectedNodeIds.Count > 0)
+                {
+                    _stateStore.Selection.ClearSelection();
                 }
             });
         }
@@ -263,6 +285,51 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Interaction
                         }
                     };
                     _stateStore.ApplyOperation(operation);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 3.5.5 全选所有动作
+        /// </summary>
+        private void SelectAllActions()
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+
+            var trigger = _stateStore.Flow.FlowVersion.Trigger;
+            var allSteps = FlowStructureUtil.GetAllSteps(trigger);
+            
+            // 选择所有动作（不包括触发器）
+            var actionIds = allSteps
+                .Where(s => s is FlowAction)
+                .Select(s => s.Name)
+                .ToArray();
+
+            _stateStore.SetSelectedNodes(actionIds);
+        }
+
+        /// <summary>
+        /// 3.5.6 移动选中的节点（方向键微调）
+        /// </summary>
+        private void MoveSelectedNodes(float deltaX, float deltaY)
+        {
+            if (_stateStore?.Flow?.FlowVersion == null) return;
+            if (_stateStore.Selection?.SelectedNodeIds == null || _stateStore.Selection.SelectedNodeIds.Count == 0) return;
+
+            // 通过GraphModel移动节点
+            if (_stateStore.Graph != null)
+            {
+                foreach (var nodeId in _stateStore.Selection.SelectedNodeIds)
+                {
+                    var node = _stateStore.Graph.GetNode(nodeId);
+                    if (node != null)
+                    {
+                        _stateStore.Graph.UpdateNodePosition(
+                            nodeId,
+                            node.PositionX + deltaX,
+                            node.PositionY + deltaY
+                        );
+                    }
                 }
             }
         }

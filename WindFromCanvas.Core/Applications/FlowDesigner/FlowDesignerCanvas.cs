@@ -61,6 +61,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         private SelectionManager _selectionManager;
 
         /// <summary>
+        /// 快捷键管理器（处理键盘快捷键）
+        /// </summary>
+        private Interaction.ShortcutManager _shortcutManager;
+
+        /// <summary>
         /// Invalidate防抖定时器（优化重绘频率）
         /// </summary>
         private System.Windows.Forms.Timer _invalidateDebounceTimer;
@@ -254,6 +259,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             
             // 3.1.1 初始化选择管理器
             _selectionManager = new SelectionManager(BuilderStateStore.Instance);
+            
+            // 3.5.7 初始化快捷键管理器
+            _shortcutManager = new Interaction.ShortcutManager(BuilderStateStore.Instance);
             
             // 订阅节点拖拽事件
             this.MouseDown += FlowDesignerCanvas_MouseDown;
@@ -742,8 +750,41 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             else if (_draggingNode != null)
             {
                 // 更新拖拽预览位置
-                _dragPreviewPosition = e.Location;
-                Invalidate();
+                var worldPos = ScreenToWorld(e.Location);
+                _dragPreviewPosition = worldPos;
+                
+                // 临时更新节点位置（用于计算对齐）
+                var originalPos = new PointF(_draggingNode.X, _draggingNode.Y);
+                _draggingNode.X = worldPos.X;
+                _draggingNode.Y = worldPos.Y;
+                
+                // 3.4.2 / 3.4.3 / 3.4.4 计算对齐辅助线并自动吸附
+                var otherNodes = _nodes.Values.Where(n => n != _draggingNode);
+                
+                if (_draggingNodes.Count > 1)
+                {
+                    // 3.4.6 多节点同时对齐
+                    NodeAlignmentHelper.SnapMultipleNodesToAlignment(_draggingNodes, otherNodes);
+                }
+                else
+                {
+                    // 单节点吸附
+                    NodeAlignmentHelper.SnapToAlignment(_draggingNode, otherNodes);
+                }
+                
+                // 计算对齐辅助线（用于视觉渲染）
+                var viewport = GetVisibleCanvasBounds();
+                _currentAlignmentGuides = NodeAlignmentHelper.GetAlignmentGuides(otherNodes, _draggingNode, viewport);
+                
+                // 更新拖拽预览位置（应用吸附后的位置）
+                _dragPreviewPosition = new PointF(_draggingNode.X, _draggingNode.Y);
+                
+                // 恢复原始位置（实际移动在MouseUp时完成）
+                _draggingNode.X = originalPos.X;
+                _draggingNode.Y = originalPos.Y;
+                
+                // 标记覆盖层需要重绘（显示对齐线）
+                MarkLayerDirty(RenderLayerType.Overlay);
             }
         }
 
@@ -806,6 +847,10 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
 
                 _draggingNode = null;
+                
+                // 清除对齐辅助线
+                _currentAlignmentGuides = null;
+                MarkLayerDirty(RenderLayerType.Overlay);
             }
         }
 
@@ -1320,15 +1365,22 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// </summary>
         private void FlowDesignerCanvas_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
+            // 3.5.7 使用ShortcutManager统一处理快捷键
+            var keyData = e.KeyData;
+            
+            // 尝试由ShortcutManager处理
+            if (_shortcutManager != null && _shortcutManager.HandleKeyPress(keyData))
             {
-                if (_selectedNodes.Count > 0)
-                {
-                    DeleteSelectedNodes();
-                    e.Handled = true;
-                }
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                
+                // 刷新画布以显示更改
+                RefreshCanvas();
+                return;
             }
-            else if (e.Control && e.KeyCode == Keys.Z)
+
+            // 保留原有的撤销/重做逻辑（不在ShortcutManager中）
+            if (e.Control && e.KeyCode == Keys.Z)
             {
                 // Ctrl+Z 撤销
                 if (CommandManager.CanUndo)
@@ -1345,18 +1397,6 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     CommandManager.Redo();
                     e.Handled = true;
                 }
-            }
-            else if (e.Control && e.KeyCode == Keys.C)
-            {
-                // Ctrl+C 复制
-                CopySelectedNodes();
-                e.Handled = true;
-            }
-            else if (e.Control && e.KeyCode == Keys.V)
-            {
-                // Ctrl+V 粘贴
-                PasteNodes();
-                e.Handled = true;
             }
         }
 
@@ -2573,8 +2613,19 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
             }
 
-            // TODO: 绘制对齐线（NodeAlignmentHelper集成后实现）
-            // 这里预留对齐线的渲染逻辑
+            // 3.4.5 绘制对齐线（视觉渲染）
+            if (_currentAlignmentGuides != null && _currentAlignmentGuides.Count > 0)
+            {
+                using (var pen = new Pen(Color.FromArgb(200, 59, 130, 246), 1f / Transform.Zoom))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    
+                    foreach (var guide in _currentAlignmentGuides)
+                    {
+                        g.DrawLine(pen, guide.Start, guide.End);
+                    }
+                }
+            }
 
             g.Restore(state);
         }
@@ -2835,6 +2886,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 当前悬停的锚点
         /// </summary>
         private AnchorPoint _hoveredAnchor;
+
+        /// <summary>
+        /// 当前的对齐辅助线
+        /// </summary>
+        private List<NodeAlignmentHelper.AlignmentGuide> _currentAlignmentGuides;
 
         /// <summary>
         /// 3.3.1 / 3.3.2 检测最近的锚点（实时距离计算和阈值检测）
