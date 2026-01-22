@@ -198,6 +198,86 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
         }
     }
 
+    /// <summary>
+    /// 中间事件节点
+    /// </summary>
+    public class IntermediateEventNode : BpmnNode
+    {
+        public override BpmnNodeType BpmnType => BpmnNodeType.IntermediateEvent;
+        public override float Width { get; set; } = 36;
+        public override float Height { get; set; } = 36;
+
+        /// <summary>
+        /// 中间事件类型（消息、定时器、错误等）
+        /// </summary>
+        public string EventType { get; set; } = "message";
+
+        public IntermediateEventNode() : base()
+        {
+            Data = new BpmnNodeData { BpmnType = BpmnNodeType.IntermediateEvent, Type = FlowNodeType.Process };
+        }
+
+        public IntermediateEventNode(BpmnNodeData data) : base(data)
+        {
+            if (data?.Properties != null && data.Properties.ContainsKey("eventType"))
+                EventType = data.Properties["eventType"]?.ToString();
+        }
+
+        public override void Draw(Graphics g)
+        {
+            if (!Visible) return;
+
+            var theme = ThemeManager.Instance.CurrentTheme;
+            var rect = new RectangleF(X, Y, Width, Height);
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // 绘制圆形（中间事件使用双边框）
+            using (var fillBrush = new SolidBrush(Color.White))
+            {
+                g.FillEllipse(fillBrush, rect);
+            }
+
+            // 绘制外边框
+            using (var borderPen = new Pen(Color.FromArgb(255, 152, 0), IsSelected ? 3 : 2))
+            {
+                g.DrawEllipse(borderPen, rect);
+            }
+
+            // 绘制内边框（双边框效果）
+            var innerRect = new RectangleF(rect.X + 3, rect.Y + 3, rect.Width - 6, rect.Height - 6);
+            using (var innerPen = new Pen(Color.FromArgb(255, 152, 0), IsSelected ? 2 : 1.5f))
+            {
+                g.DrawEllipse(innerPen, innerRect);
+            }
+
+            if (IsSelected)
+            {
+                using (var selectPen = new Pen(theme.Primary, 1) { DashStyle = DashStyle.Dash })
+                {
+                    var selectRect = rect;
+                    selectRect.Inflate(4, 4);
+                    g.DrawEllipse(selectPen, selectRect);
+                }
+            }
+
+            DrawPorts(g);
+        }
+
+        /// <summary>
+        /// 中间事件可以作为源和目标
+        /// </summary>
+        public List<FlowNodeType> GetConnectedSourceRules()
+        {
+            return null;
+        }
+
+        public List<FlowNodeType> GetConnectedTargetRules()
+        {
+            return null;
+        }
+    }
+
     #endregion
 
     #region 任务节点
@@ -357,6 +437,44 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
         public ScriptTaskNode(BpmnNodeData data) : base(data) { }
     }
 
+    /// <summary>
+    /// 手动任务节点
+    /// </summary>
+    public class ManualTaskNode : BpmnTaskNode
+    {
+        public override BpmnNodeType BpmnType => BpmnNodeType.ManualTask;
+        protected override Color TaskColor => Color.FromArgb(158, 158, 158); // 灰色
+        protected override string TaskIconText => "✋";
+
+        public ManualTaskNode() : base()
+        {
+            Data = new BpmnNodeData { BpmnType = BpmnNodeType.ManualTask, Type = FlowNodeType.Process };
+        }
+
+        public ManualTaskNode(BpmnNodeData data) : base(data) { }
+
+        protected override void DrawTaskIcon(Graphics g, RectangleF iconRect)
+        {
+            // 绘制手势图标
+            using (var pen = new Pen(TaskColor, 1.5f))
+            {
+                var centerX = iconRect.X + iconRect.Width / 2;
+                var centerY = iconRect.Y + iconRect.Height / 2;
+
+                // 绘制手掌轮廓（简化版）
+                // 手腕
+                g.DrawLine(pen, centerX - 2, iconRect.Bottom - 2, centerX + 2, iconRect.Bottom - 2);
+                // 手掌
+                g.DrawLine(pen, centerX - 2, iconRect.Bottom - 2, centerX - 2, centerY + 2);
+                g.DrawLine(pen, centerX + 2, iconRect.Bottom - 2, centerX + 2, centerY + 2);
+                // 手指（三根）
+                g.DrawLine(pen, centerX - 3, centerY + 2, centerX - 3, iconRect.Top + 2);
+                g.DrawLine(pen, centerX, centerY, centerX, iconRect.Top);
+                g.DrawLine(pen, centerX + 3, centerY + 2, centerX + 3, iconRect.Top + 2);
+            }
+        }
+    }
+
     #endregion
 
     #region 网关节点
@@ -496,6 +614,333 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
             {
                 var size = 10;
                 g.DrawEllipse(pen, centerX - size, centerY - size, size * 2, size * 2);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 事件网关节点
+    /// </summary>
+    public class EventBasedGatewayNode : BpmnGatewayNode
+    {
+        public override BpmnNodeType BpmnType => BpmnNodeType.EventBasedGateway;
+        protected override Color GatewayColor => Color.FromArgb(156, 39, 176); // 紫色
+
+        public EventBasedGatewayNode() : base()
+        {
+            Data = new BpmnNodeData { BpmnType = BpmnNodeType.EventBasedGateway, Type = FlowNodeType.Decision };
+        }
+
+        public EventBasedGatewayNode(BpmnNodeData data) : base(data) { }
+
+        public override void Draw(Graphics g)
+        {
+            if (!Visible) return;
+
+            var theme = ThemeManager.Instance.CurrentTheme;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // 绘制菱形
+            var centerX = X + Width / 2;
+            var centerY = Y + Height / 2;
+            var halfWidth = Width / 2;
+            var halfHeight = Height / 2;
+
+            var points = new PointF[]
+            {
+                new PointF(centerX, Y),           // 上
+                new PointF(X + Width, centerY),   // 右
+                new PointF(centerX, Y + Height),  // 下
+                new PointF(X, centerY)            // 左
+            };
+
+            using (var path = new GraphicsPath())
+            {
+                path.AddPolygon(points);
+
+                using (var fillBrush = new SolidBrush(Color.White))
+                {
+                    g.FillPath(fillBrush, path);
+                }
+
+                // 绘制外边框
+                var borderColor = IsSelected ? theme.Primary : GatewayColor;
+                using (var borderPen = new Pen(borderColor, IsSelected ? 2.5f : 1.5f))
+                {
+                    g.DrawPath(borderPen, path);
+                }
+            }
+
+            // 绘制内部圆圈（双边框效果）
+            var innerCircleSize = Width * 0.5f;
+            var innerRect = new RectangleF(
+                centerX - innerCircleSize / 2,
+                centerY - innerCircleSize / 2,
+                innerCircleSize,
+                innerCircleSize
+            );
+            using (var innerPen = new Pen(GatewayColor, 1.5f))
+            {
+                g.DrawEllipse(innerPen, innerRect);
+            }
+
+            // 绘制五边形标记
+            DrawGatewayMarker(g, centerX, centerY);
+
+            DrawPorts(g);
+        }
+
+        protected override void DrawGatewayMarker(Graphics g, float centerX, float centerY)
+        {
+            // 绘制五边形标记
+            var size = 8f;
+            var angle = (float)(Math.PI * 2 / 5); // 72度
+            var startAngle = -(float)Math.PI / 2; // 从顶部开始
+
+            var points = new PointF[5];
+            for (int i = 0; i < 5; i++)
+            {
+                var currentAngle = startAngle + angle * i;
+                points[i] = new PointF(
+                    centerX + (float)Math.Cos(currentAngle) * size,
+                    centerY + (float)Math.Sin(currentAngle) * size
+                );
+            }
+
+            using (var pen = new Pen(GatewayColor, 1.5f))
+            {
+                g.DrawPolygon(pen, points);
+            }
+        }
+    }
+
+    #endregion
+
+    #region 子流程节点
+
+    /// <summary>
+    /// BPMN子流程节点（可展开/折叠容器）
+    /// </summary>
+    public class SubProcessNode : BpmnNode
+    {
+        public override BpmnNodeType BpmnType => BpmnNodeType.SubProcess;
+        public override float Width { get; set; } = 200;
+        public override float Height { get; set; } = 150;
+        public override float CornerRadius { get; set; } = 10;
+
+        private bool _isExpanded = true;
+        private readonly System.Collections.Generic.List<BpmnNode> _childNodes = new System.Collections.Generic.List<BpmnNode>();
+
+        /// <summary>
+        /// 是否展开
+        /// </summary>
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set => _isExpanded = value;
+        }
+
+        /// <summary>
+        /// 子节点列表
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<BpmnNode> ChildNodes => _childNodes.AsReadOnly();
+
+        public SubProcessNode() : base()
+        {
+            Data = new BpmnNodeData { BpmnType = BpmnNodeType.SubProcess, Type = FlowNodeType.Group };
+        }
+
+        public SubProcessNode(BpmnNodeData data) : base(data) { }
+
+        public override void Draw(Graphics g)
+        {
+            if (!Visible) return;
+
+            var theme = ThemeManager.Instance.CurrentTheme;
+            var rect = new RectangleF(X, Y, Width, Height);
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            using (var path = CreateRoundedRectangle(rect, CornerRadius))
+            {
+                // 填充背景
+                using (var fillBrush = new SolidBrush(Color.White))
+                {
+                    g.FillPath(fillBrush, path);
+                }
+
+                // 绘制双边框（外边框）
+                var borderColor = IsSelected ? theme.Primary : Color.FromArgb(33, 150, 243);
+                using (var borderPen = new Pen(borderColor, IsSelected ? 3f : 2f))
+                {
+                    g.DrawPath(borderPen, path);
+                }
+
+                // 绘制内边框
+                var innerRect = new RectangleF(rect.X + 3, rect.Y + 3, rect.Width - 6, rect.Height - 6);
+                using (var innerPath = CreateRoundedRectangle(innerRect, CornerRadius - 2))
+                using (var innerPen = new Pen(borderColor, IsSelected ? 2f : 1.5f))
+                {
+                    g.DrawPath(innerPen, innerPath);
+                }
+            }
+
+            // 绘制子流程标题
+            DrawSubProcessTitle(g, rect);
+
+            // 绘制展开/折叠图标
+            DrawExpandCollapseIcon(g, rect);
+
+            DrawPorts(g);
+        }
+
+        private void DrawSubProcessTitle(Graphics g, RectangleF rect)
+        {
+            var text = Data?.DisplayName ?? Data?.Name ?? "子流程";
+            using (var font = new Font("Segoe UI", 9))
+            using (var brush = new SolidBrush(Color.Black))
+            {
+                var textRect = new RectangleF(rect.X + 10, rect.Y + 10, rect.Width - 50, 20);
+                var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Near,
+                    LineAlignment = StringAlignment.Near,
+                    Trimming = StringTrimming.EllipsisCharacter
+                };
+                g.DrawString(text, font, brush, textRect, format);
+            }
+        }
+
+        private void DrawExpandCollapseIcon(Graphics g, RectangleF rect)
+        {
+            var iconRect = new RectangleF(rect.X + rect.Width - 25, rect.Y + 10, 12, 12);
+            using (var pen = new Pen(Color.FromArgb(100, 116, 139), 1.5f))
+            {
+                if (_isExpanded)
+                {
+                    // 折叠图标(-)
+                    g.DrawLine(pen, iconRect.X, iconRect.Y + iconRect.Height / 2, iconRect.Right, iconRect.Y + iconRect.Height / 2);
+                }
+                else
+                {
+                    // 展开图标(+)
+                    g.DrawLine(pen, iconRect.X, iconRect.Y + iconRect.Height / 2, iconRect.Right, iconRect.Y + iconRect.Height / 2);
+                    g.DrawLine(pen, iconRect.X + iconRect.Width / 2, iconRect.Y, iconRect.X + iconRect.Width / 2, iconRect.Bottom);
+                }
+            }
+        }
+
+        public void AddChild(BpmnNode node)
+        {
+            if (node != null && !_childNodes.Contains(node))
+            {
+                _childNodes.Add(node);
+            }
+        }
+
+        public void RemoveChild(BpmnNode node)
+        {
+            _childNodes.Remove(node);
+        }
+    }
+
+    /// <summary>
+    /// BPMN调用活动节点
+    /// </summary>
+    public class CallActivityNode : BpmnNode
+    {
+        public override BpmnNodeType BpmnType => BpmnNodeType.CallActivity;
+        public override float Width { get; set; } = 100;
+        public override float Height { get; set; } = 80;
+        public override float CornerRadius { get; set; } = 10;
+
+        /// <summary>
+        /// 调用的外部流程ID
+        /// </summary>
+        public string CalledElement { get; set; }
+
+        /// <summary>
+        /// 调用的流程版本
+        /// </summary>
+        public string CalledElementVersion { get; set; }
+
+        public CallActivityNode() : base()
+        {
+            Data = new BpmnNodeData { BpmnType = BpmnNodeType.CallActivity, Type = FlowNodeType.Process };
+        }
+
+        public CallActivityNode(BpmnNodeData data) : base(data)
+        {
+            if (data?.Properties != null)
+            {
+                if (data.Properties.ContainsKey("calledElement"))
+                    CalledElement = data.Properties["calledElement"]?.ToString();
+                if (data.Properties.ContainsKey("calledElementVersion"))
+                    CalledElementVersion = data.Properties["calledElementVersion"]?.ToString();
+            }
+        }
+
+        public override void Draw(Graphics g)
+        {
+            if (!Visible) return;
+
+            var theme = ThemeManager.Instance.CurrentTheme;
+            var rect = new RectangleF(X, Y, Width, Height);
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            using (var path = CreateRoundedRectangle(rect, CornerRadius))
+            {
+                // 填充背景
+                using (var fillBrush = new SolidBrush(Color.White))
+                {
+                    g.FillPath(fillBrush, path);
+                }
+
+                // 绘制粗边框
+                var borderColor = IsSelected ? theme.Primary : Color.FromArgb(33, 150, 243);
+                using (var borderPen = new Pen(borderColor, IsSelected ? 4f : 3f))
+                {
+                    g.DrawPath(borderPen, path);
+                }
+            }
+
+            // 绘制调用活动图标
+            DrawCallActivityIcon(g, rect);
+
+            // 绘制节点名称
+            DrawCallActivityName(g, rect);
+
+            DrawPorts(g);
+        }
+
+        private void DrawCallActivityIcon(Graphics g, RectangleF rect)
+        {
+            var iconRect = new RectangleF(rect.X + 5, rect.Y + 5, 16, 16);
+            using (var pen = new Pen(Color.FromArgb(33, 150, 243), 1.5f))
+            {
+                // 绘制文档图标（表示外部流程）
+                g.DrawRectangle(pen, iconRect.X, iconRect.Y, iconRect.Width, iconRect.Height - 3);
+                g.DrawLine(pen, iconRect.X, iconRect.Bottom - 3, iconRect.X + 3, iconRect.Bottom);
+                g.DrawLine(pen, iconRect.X + 3, iconRect.Bottom, iconRect.Right - 3, iconRect.Bottom);
+                g.DrawLine(pen, iconRect.Right - 3, iconRect.Bottom, iconRect.Right, iconRect.Bottom - 3);
+            }
+        }
+
+        private void DrawCallActivityName(Graphics g, RectangleF rect)
+        {
+            var text = Data?.DisplayName ?? Data?.Name ?? "调用活动";
+            using (var font = new Font("Segoe UI", 9))
+            using (var brush = new SolidBrush(Color.Black))
+            {
+                var textRect = new RectangleF(rect.X + 5, rect.Y + 25, rect.Width - 10, rect.Height - 30);
+                var format = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center,
+                    Trimming = StringTrimming.EllipsisCharacter
+                };
+                g.DrawString(text, font, brush, textRect, format);
             }
         }
     }

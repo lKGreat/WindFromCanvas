@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using WindFromCanvas.Core.Applications.FlowDesigner.Models;
 using WindFromCanvas.Core.Applications.FlowDesigner.Nodes;
 using WindFromCanvas.Core.Applications.FlowDesigner.Themes;
+using WindFromCanvas.Core.Applications.FlowDesigner.Plugins.DynamicGroup;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
 {
@@ -114,6 +115,12 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
             AddCategory("basic", "基础节点", 1);
             AddCategory("control", "控制节点", 2);
             AddCategory("data", "数据节点", 3);
+            
+            // BPMN类别
+            AddCategory("bpmn-events", "BPMN 事件", 4);
+            AddCategory("bpmn-tasks", "BPMN 任务", 5);
+            AddCategory("bpmn-gateways", "BPMN 网关", 6);
+            AddCategory("bpmn-subprocesses", "BPMN 子流程", 7);
 
             // 基础节点
             AddNodeType(new NodeTypeItem
@@ -193,6 +200,162 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
                 Category = "data",
                 Color = Color.FromArgb(121, 85, 72),
                 IconText = "◈"
+            });
+
+            // 注册BPMN节点类型（如果BPMN插件已加载）
+            RegisterBpmnNodeTypes();
+        }
+
+        /// <summary>
+        /// 注册BPMN节点类型到工具箱
+        /// </summary>
+        private void RegisterBpmnNodeTypes()
+        {
+            // BPMN 事件节点
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-start-event",
+                Type = FlowNodeType.Start, // 映射到基础类型
+                DisplayName = "开始事件",
+                Description = "BPMN流程开始",
+                Category = "bpmn-events",
+                Color = Color.FromArgb(67, 160, 71),
+                IconText = "●"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-end-event",
+                Type = FlowNodeType.End,
+                DisplayName = "结束事件",
+                Description = "BPMN流程结束",
+                Category = "bpmn-events",
+                Color = Color.FromArgb(229, 57, 53),
+                IconText = "◉"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-intermediate-event",
+                Type = FlowNodeType.Process,
+                DisplayName = "中间事件",
+                Description = "中间事件捕获/抛出",
+                Category = "bpmn-events",
+                Color = Color.FromArgb(255, 152, 0),
+                IconText = "◎"
+            });
+
+            // BPMN 任务节点
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-user-task",
+                Type = FlowNodeType.Process,
+                DisplayName = "用户任务",
+                Description = "需要人工处理的任务",
+                Category = "bpmn-tasks",
+                Color = Color.FromArgb(255, 152, 0),
+                IconText = "👤"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-service-task",
+                Type = FlowNodeType.Process,
+                DisplayName = "服务任务",
+                Description = "自动服务调用",
+                Category = "bpmn-tasks",
+                Color = Color.FromArgb(33, 150, 243),
+                IconText = "⚙"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-script-task",
+                Type = FlowNodeType.Code,
+                DisplayName = "脚本任务",
+                Description = "执行脚本代码",
+                Category = "bpmn-tasks",
+                Color = Color.FromArgb(156, 39, 176),
+                IconText = "📜"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-manual-task",
+                Type = FlowNodeType.Process,
+                DisplayName = "手动任务",
+                Description = "手动执行的任务",
+                Category = "bpmn-tasks",
+                Color = Color.FromArgb(158, 158, 158),
+                IconText = "✋"
+            });
+
+            // BPMN 网关节点
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-exclusive-gateway",
+                Type = FlowNodeType.Decision,
+                DisplayName = "排他网关",
+                Description = "条件分支（互斥）",
+                Category = "bpmn-gateways",
+                Color = Color.FromArgb(255, 193, 7),
+                IconText = "◇✕"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-parallel-gateway",
+                Type = FlowNodeType.Decision,
+                DisplayName = "并行网关",
+                Description = "并行分支/合并",
+                Category = "bpmn-gateways",
+                Color = Color.FromArgb(76, 175, 80),
+                IconText = "◇+"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-inclusive-gateway",
+                Type = FlowNodeType.Decision,
+                DisplayName = "包容网关",
+                Description = "条件分支（包容）",
+                Category = "bpmn-gateways",
+                Color = Color.FromArgb(255, 152, 0),
+                IconText = "◇○"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-event-gateway",
+                Type = FlowNodeType.Decision,
+                DisplayName = "事件网关",
+                Description = "基于事件的分支",
+                Category = "bpmn-gateways",
+                Color = Color.FromArgb(156, 39, 176),
+                IconText = "◇⬟"
+            });
+
+            // BPMN 子流程节点
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-subprocess",
+                Type = FlowNodeType.Group,
+                DisplayName = "子流程",
+                Description = "嵌套子流程",
+                Category = "bpmn-subprocesses",
+                Color = Color.FromArgb(33, 150, 243),
+                IconText = "▭"
+            });
+
+            AddNodeType(new NodeTypeItem
+            {
+                Id = "bpmn-call-activity",
+                Type = FlowNodeType.Process,
+                DisplayName = "调用活动",
+                Description = "调用外部流程",
+                Category = "bpmn-subprocesses",
+                Color = Color.FromArgb(33, 150, 243),
+                IconText = "⊞"
             });
         }
 
@@ -742,6 +905,20 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
                     return new LoopNode(data);
                 case FlowNodeType.End:
                     return new EndNode(data);
+                case FlowNodeType.Code:
+                    return new CodeNode(data);
+                case FlowNodeType.Piece:
+                    return new PieceNode(data);
+                case FlowNodeType.Group:
+                    return new Plugins.DynamicGroup.GroupNode(
+                        data is Plugins.DynamicGroup.GroupNodeData groupData ? 
+                        groupData : 
+                        new Plugins.DynamicGroup.GroupNodeData 
+                        { 
+                            Name = data.Name, 
+                            PositionX = data.PositionX, 
+                            PositionY = data.PositionY 
+                        });
                 default:
                     return new ProcessNode(data);
             }

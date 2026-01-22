@@ -1,36 +1,50 @@
+using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using WindFromCanvas.Core.Applications.FlowDesigner.Models;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
 {
     /// <summary>
     /// 结束节点 - 圆形红色节点，只有输入端口
+    /// 标准：60x60px圆形，红色背景，停止图标(■)
     /// </summary>
     public class EndNode : FlowNode
     {
         public EndNode() : base()
         {
-            Width = 60f;
-            Height = 60f;
-            BackgroundColor = Color.FromArgb(244, 67, 54); // 红色
-            BorderColor = Color.FromArgb(198, 40, 40);
+            Width = Models.NodeSizeConstants.StartEndSize;
+            Height = Models.NodeSizeConstants.StartEndSize;
+            BackgroundColor = Models.NodeColorConstants.EndRed;
+            BorderColor = Models.NodeColorConstants.EndRedBorder;
             TextColor = Color.White;
             Draggable = true;
+            
+            // 只有输入端口，没有输出端口
+            OutputPorts.Clear();
         }
 
         public EndNode(FlowNodeData data) : base(data)
         {
-            Width = 60f;
-            Height = 60f;
-            BackgroundColor = Color.FromArgb(244, 67, 54);
-            BorderColor = Color.FromArgb(198, 40, 40);
+            Width = Models.NodeSizeConstants.StartEndSize;
+            Height = Models.NodeSizeConstants.StartEndSize;
+            BackgroundColor = Models.NodeColorConstants.EndRed;
+            BorderColor = Models.NodeColorConstants.EndRedBorder;
             TextColor = Color.White;
             Draggable = true;
+            
+            // 只有输入端口，没有输出端口
+            OutputPorts.Clear();
         }
 
         public override void Draw(Graphics g)
         {
             if (!Visible || Data == null) return;
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var centerX = X + Width / 2;
+            var centerY = Y + Height / 2;
 
             // 绘制圆形背景
             using (var brush = new SolidBrush(BackgroundColor))
@@ -40,22 +54,60 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Nodes
 
             // 绘制边框
             var borderColor = IsSelected ? SelectedBorderColor : (IsHovered ? HoverBorderColor : BorderColor);
-            using (var pen = new Pen(borderColor, BorderWidth))
+            var borderWidth = IsSelected ? SelectedBorderWidth : BorderWidth;
+            using (var pen = new Pen(borderColor, borderWidth))
             {
-                g.DrawEllipse(pen, X + BorderWidth, Y + BorderWidth, Width - BorderWidth * 2, Height - BorderWidth * 2);
+                g.DrawEllipse(pen, X + borderWidth / 2, Y + borderWidth / 2, Width - borderWidth, Height - borderWidth);
             }
 
-            // 绘制文本
-            var text = Data?.DisplayName ?? "结束";
-            using (var brush = new SolidBrush(TextColor))
-            using (var sf = new StringFormat
+            // 绘制停止图标(■)
+            DrawStopIcon(g, centerX, centerY);
+
+            // 绘制输入端口
+            DrawPorts(g);
+        }
+
+        /// <summary>
+        /// 绘制停止图标(■)
+        /// </summary>
+        private void DrawStopIcon(Graphics g, float centerX, float centerY)
+        {
+            var iconSize = 14f;
+            var rect = new RectangleF(
+                centerX - iconSize / 2,
+                centerY - iconSize / 2,
+                iconSize,
+                iconSize
+            );
+
+            using (var brush = new SolidBrush(Color.White))
             {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            })
+                g.FillRectangle(brush, rect);
+            }
+        }
+
+        /// <summary>
+        /// 重写端口绘制，只绘制输入端口
+        /// </summary>
+        protected override void DrawPorts(Graphics g)
+        {
+            var bounds = GetBounds();
+            
+            // 只有输入端口（左侧中点）
+            if (InputPorts.Count == 0)
             {
-                g.DrawString(text, SystemFonts.DefaultFont, brush, 
-                    new RectangleF(X, Y, Width, Height), sf);
+                InputPorts.Add(new PointF(bounds.Left, bounds.Y + bounds.Height / 2));
+            }
+            else
+            {
+                InputPorts[0] = new PointF(bounds.Left, bounds.Y + bounds.Height / 2);
+            }
+
+            // 绘制输入端口
+            for (int i = 0; i < InputPorts.Count; i++)
+            {
+                var portState = GetPortState(i, true);
+                DrawPort(g, InputPorts[i], true, portState);
             }
         }
 

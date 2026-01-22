@@ -18,6 +18,8 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Enums;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Operations;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Utils;
+using WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin;
+using WindFromCanvas.Core.Applications.FlowDesigner.Plugins.DynamicGroup;
 
 namespace WindFromCanvas
 {
@@ -94,6 +96,8 @@ namespace WindFromCanvas
             demoMenu.DropDownItems.Add("演示运行系统", null, (s, e) => ShowRunDemo());
             demoMenu.DropDownItems.Add(new ToolStripSeparator());
             demoMenu.DropDownItems.Add("LogicFlow架构演示", null, (s, e) => ShowLogicFlowDemo());
+            demoMenu.DropDownItems.Add("演示所有节点类型", null, (s, e) => ShowAllNodeTypesDemo());
+            demoMenu.DropDownItems.Add("演示BPMN节点", null, (s, e) => ShowBpmnNodesDemo());
             
             _menuStrip.Items.AddRange(new[] { fileMenu, viewMenu, toolsMenu, demoMenu, helpMenu });
             this.MainMenuStrip = _menuStrip;
@@ -280,6 +284,308 @@ run.StepOutputs[""step1""] = new StepOutput
             demoForm.ShowDialog(this);
         }
 
+        /// <summary>
+        /// 演示所有节点类型
+        /// </summary>
+        private void ShowAllNodeTypesDemo()
+        {
+            flowDesignerCanvas1.Clear();
+
+            float startX = 50;
+            float startY = 50;
+            float spacing = 280;
+            float ySpacing = 120;
+
+            // === 基础节点类型 ===
+            
+            // 1. Start节点
+            var startData = new FlowNodeData
+            {
+                Name = "start",
+                DisplayName = "开始",
+                Type = FlowNodeType.Start,
+                Position = new PointF(startX, startY),
+                Description = "流程起始点，只有输出端口"
+            };
+            flowDesignerCanvas1.AddNode(new StartNode(startData));
+
+            // 2. Process节点
+            var processData = new FlowNodeData
+            {
+                Name = "process",
+                DisplayName = "处理节点",
+                Type = FlowNodeType.Process,
+                Position = new PointF(startX + spacing, startY),
+                Description = "执行操作或任务"
+            };
+            flowDesignerCanvas1.AddNode(new ProcessNode(processData));
+
+            // 3. Decision节点
+            var decisionData = new FlowNodeData
+            {
+                Name = "decision",
+                DisplayName = "判断节点",
+                Type = FlowNodeType.Decision,
+                Position = new PointF(startX + spacing * 2, startY),
+                Description = "条件分支，2个输出端口"
+            };
+            flowDesignerCanvas1.AddNode(new DecisionNode(decisionData));
+
+            // 4. End节点
+            var endData = new FlowNodeData
+            {
+                Name = "end",
+                DisplayName = "结束",
+                Type = FlowNodeType.End,
+                Position = new PointF(startX + spacing * 3, startY),
+                Description = "流程终止点，只有输入端口"
+            };
+            flowDesignerCanvas1.AddNode(new EndNode(endData));
+
+            // === 第二行：控制节点和数据节点 ===
+
+            // 5. Loop节点
+            var loopData = new FlowNodeData
+            {
+                Name = "loop",
+                DisplayName = "循环节点",
+                Type = FlowNodeType.Loop,
+                Position = new PointF(startX, startY + ySpacing),
+                Description = "重复执行一组操作"
+            };
+            flowDesignerCanvas1.AddNode(new LoopNode(loopData));
+
+            // 6. Code节点
+            var codeData = new FlowNodeData
+            {
+                Name = "code",
+                DisplayName = "代码节点",
+                Type = FlowNodeType.Code,
+                Position = new PointF(startX + spacing, startY + ySpacing),
+                Description = "执行自定义代码脚本"
+            };
+            codeData.Properties["script"] = "// JavaScript代码\nreturn { result: 'success' };";
+            codeData.Properties["scriptLanguage"] = "javascript";
+            flowDesignerCanvas1.AddNode(new CodeNode(codeData));
+
+            // 7. Piece节点
+            var pieceData = new FlowNodeData
+            {
+                Name = "piece",
+                DisplayName = "组件节点",
+                Type = FlowNodeType.Piece,
+                Position = new PointF(startX + spacing * 2, startY + ySpacing),
+                Description = "引用可复用组件"
+            };
+            pieceData.Properties["pieceId"] = "email-component";
+            pieceData.Properties["pieceVersion"] = "1.0.0";
+            flowDesignerCanvas1.AddNode(new PieceNode(pieceData));
+
+            // 8. Group节点
+            var groupData = new GroupNodeData
+            {
+                Name = "group",
+                Type = FlowNodeType.Group,
+                PositionX = startX + spacing * 3,
+                PositionY = startY + ySpacing,
+                GroupWidth = 250,
+                GroupHeight = 180,
+                IsCollapsed = false
+            };
+            var groupNode = new GroupNode(groupData);
+            flowDesignerCanvas1.AddObject(groupNode);
+
+            // 显示提示
+            ToastNotification.Show("已展示所有基础节点类型（8种）\n\n包括：Start、End、Process、Decision、Loop、Code、Piece、Group", ToastType.Success, this);
+        }
+
+        /// <summary>
+        /// 演示BPMN节点
+        /// </summary>
+        private void ShowBpmnNodesDemo()
+        {
+            flowDesignerCanvas1.Clear();
+
+            float startX = 50;
+            float startY = 50;
+            float spacing = 150;
+            float ySpacing = 120;
+
+            // === BPMN事件节点 ===
+            
+            // 1. StartEvent
+            var startEventData = new BpmnNodeData
+            {
+                Name = "startEvent",
+                DisplayName = "开始事件",
+                BpmnType = BpmnNodeType.StartEvent,
+                Type = FlowNodeType.Start,
+                PositionX = startX,
+                PositionY = startY
+            };
+            flowDesignerCanvas1.AddNode(new StartEventNode(startEventData));
+
+            // 2. IntermediateEvent
+            var intermediateEventData = new BpmnNodeData
+            {
+                Name = "intermediateEvent",
+                DisplayName = "中间事件",
+                BpmnType = BpmnNodeType.IntermediateEvent,
+                Type = FlowNodeType.Process,
+                PositionX = startX + spacing,
+                PositionY = startY
+            };
+            flowDesignerCanvas1.AddNode(new IntermediateEventNode(intermediateEventData));
+
+            // 3. EndEvent
+            var endEventData = new BpmnNodeData
+            {
+                Name = "endEvent",
+                DisplayName = "结束事件",
+                BpmnType = BpmnNodeType.EndEvent,
+                Type = FlowNodeType.End,
+                PositionX = startX + spacing * 2,
+                PositionY = startY
+            };
+            flowDesignerCanvas1.AddNode(new EndEventNode(endEventData));
+
+            // === BPMN任务节点 ===
+
+            // 4. UserTask
+            var userTaskData = new BpmnNodeData
+            {
+                Name = "userTask",
+                DisplayName = "用户任务",
+                BpmnType = BpmnNodeType.UserTask,
+                Type = FlowNodeType.Process,
+                PositionX = startX,
+                PositionY = startY + ySpacing,
+                Assignee = "admin"
+            };
+            flowDesignerCanvas1.AddNode(new UserTaskNode(userTaskData));
+
+            // 5. ServiceTask
+            var serviceTaskData = new BpmnNodeData
+            {
+                Name = "serviceTask",
+                DisplayName = "服务任务",
+                BpmnType = BpmnNodeType.ServiceTask,
+                Type = FlowNodeType.Process,
+                PositionX = startX + spacing,
+                PositionY = startY + ySpacing
+            };
+            flowDesignerCanvas1.AddNode(new ServiceTaskNode(serviceTaskData));
+
+            // 6. ScriptTask
+            var scriptTaskData = new BpmnNodeData
+            {
+                Name = "scriptTask",
+                DisplayName = "脚本任务",
+                BpmnType = BpmnNodeType.ScriptTask,
+                Type = FlowNodeType.Code,
+                PositionX = startX + spacing * 2,
+                PositionY = startY + ySpacing,
+                ScriptFormat = "javascript",
+                Script = "console.log('Hello BPMN');"
+            };
+            flowDesignerCanvas1.AddNode(new ScriptTaskNode(scriptTaskData));
+
+            // 7. ManualTask
+            var manualTaskData = new BpmnNodeData
+            {
+                Name = "manualTask",
+                DisplayName = "手动任务",
+                BpmnType = BpmnNodeType.ManualTask,
+                Type = FlowNodeType.Process,
+                PositionX = startX + spacing * 3,
+                PositionY = startY + ySpacing
+            };
+            flowDesignerCanvas1.AddNode(new ManualTaskNode(manualTaskData));
+
+            // === BPMN网关节点 ===
+
+            // 8. ExclusiveGateway
+            var exclusiveGatewayData = new BpmnNodeData
+            {
+                Name = "exclusiveGateway",
+                DisplayName = "排他网关",
+                BpmnType = BpmnNodeType.ExclusiveGateway,
+                Type = FlowNodeType.Decision,
+                PositionX = startX,
+                PositionY = startY + ySpacing * 2
+            };
+            flowDesignerCanvas1.AddNode(new ExclusiveGatewayNode(exclusiveGatewayData));
+
+            // 9. ParallelGateway
+            var parallelGatewayData = new BpmnNodeData
+            {
+                Name = "parallelGateway",
+                DisplayName = "并行网关",
+                BpmnType = BpmnNodeType.ParallelGateway,
+                Type = FlowNodeType.Decision,
+                PositionX = startX + spacing,
+                PositionY = startY + ySpacing * 2
+            };
+            flowDesignerCanvas1.AddNode(new ParallelGatewayNode(parallelGatewayData));
+
+            // 10. InclusiveGateway
+            var inclusiveGatewayData = new BpmnNodeData
+            {
+                Name = "inclusiveGateway",
+                DisplayName = "包容网关",
+                BpmnType = BpmnNodeType.InclusiveGateway,
+                Type = FlowNodeType.Decision,
+                PositionX = startX + spacing * 2,
+                PositionY = startY + ySpacing * 2
+            };
+            flowDesignerCanvas1.AddNode(new InclusiveGatewayNode(inclusiveGatewayData));
+
+            // 11. EventBasedGateway
+            var eventGatewayData = new BpmnNodeData
+            {
+                Name = "eventGateway",
+                DisplayName = "事件网关",
+                BpmnType = BpmnNodeType.EventBasedGateway,
+                Type = FlowNodeType.Decision,
+                PositionX = startX + spacing * 3,
+                PositionY = startY + ySpacing * 2
+            };
+            flowDesignerCanvas1.AddNode(new EventBasedGatewayNode(eventGatewayData));
+
+            // === BPMN子流程节点 ===
+
+            // 12. SubProcess
+            var subProcessData = new BpmnNodeData
+            {
+                Name = "subProcess",
+                DisplayName = "子流程",
+                BpmnType = BpmnNodeType.SubProcess,
+                Type = FlowNodeType.Group,
+                PositionX = startX,
+                PositionY = startY + ySpacing * 3
+            };
+            flowDesignerCanvas1.AddNode(new SubProcessNode(subProcessData));
+
+            // 13. CallActivity
+            var callActivityData = new BpmnNodeData
+            {
+                Name = "callActivity",
+                DisplayName = "调用活动",
+                BpmnType = BpmnNodeType.CallActivity,
+                Type = FlowNodeType.Process,
+                PositionX = startX + spacing * 2,
+                PositionY = startY + ySpacing * 3
+            };
+            callActivityData.Properties["calledElement"] = "external-process";
+            flowDesignerCanvas1.AddNode(new CallActivityNode(callActivityData));
+
+            // 适应视图
+            flowDesignerCanvas1.FitToView();
+
+            // 显示提示
+            ToastNotification.Show("已展示所有BPMN节点类型（13种）\n\n包括：\n事件（3种）、任务（4种）、网关（4种）、子流程（2种）", ToastType.Info, this);
+        }
+
         private void SetupFlowDesigner()
         {
             // 设置工具箱和属性面板
@@ -362,7 +668,36 @@ run.StepOutputs[""step1""] = new StepOutput
             var loopNode = new LoopNode(loopNodeData);
             flowDesignerCanvas1.AddNode(loopNode);
 
-            // 5. 结束节点
+            // 5. Code节点（新增）
+            var codeNodeData = new FlowNodeData
+            {
+                Name = "code1",
+                DisplayName = "执行代码",
+                Type = FlowNodeType.Code,
+                Position = new PointF(600, 350),
+                Description = "执行自定义JavaScript代码"
+            };
+            codeNodeData.Properties["script"] = "// 示例代码\nreturn { processed: true };";
+            codeNodeData.Properties["scriptLanguage"] = "javascript";
+            var codeNode = new CodeNode(codeNodeData);
+            flowDesignerCanvas1.AddNode(codeNode);
+
+            // 6. Piece节点（新增）
+            var pieceNodeData = new FlowNodeData
+            {
+                Name = "piece1",
+                DisplayName = "发送邮件",
+                Type = FlowNodeType.Piece,
+                Position = new PointF(100, 500),
+                Description = "邮件组件"
+            };
+            pieceNodeData.Properties["pieceId"] = "email-sender";
+            pieceNodeData.Properties["pieceVersion"] = "1.0.0";
+            pieceNodeData.Properties["pieceType"] = "notification";
+            var pieceNode = new PieceNode(pieceNodeData);
+            flowDesignerCanvas1.AddNode(pieceNode);
+
+            // 7. 结束节点
             var endNodeData = new FlowNodeData
             {
                 Name = "end",

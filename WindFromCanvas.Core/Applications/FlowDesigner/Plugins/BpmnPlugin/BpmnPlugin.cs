@@ -51,16 +51,23 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
             // 事件节点
             RegisterNodeType("bpmn:startEvent", typeof(BpmnNodeData), typeof(StartEventNode));
             RegisterNodeType("bpmn:endEvent", typeof(BpmnNodeData), typeof(EndEventNode));
+            RegisterNodeType("bpmn:intermediateEvent", typeof(BpmnNodeData), typeof(IntermediateEventNode));
 
             // 任务节点
             RegisterNodeType("bpmn:userTask", typeof(BpmnNodeData), typeof(UserTaskNode));
             RegisterNodeType("bpmn:serviceTask", typeof(BpmnNodeData), typeof(ServiceTaskNode));
             RegisterNodeType("bpmn:scriptTask", typeof(BpmnNodeData), typeof(ScriptTaskNode));
+            RegisterNodeType("bpmn:manualTask", typeof(BpmnNodeData), typeof(ManualTaskNode));
 
             // 网关节点
             RegisterNodeType("bpmn:exclusiveGateway", typeof(BpmnNodeData), typeof(ExclusiveGatewayNode));
             RegisterNodeType("bpmn:parallelGateway", typeof(BpmnNodeData), typeof(ParallelGatewayNode));
             RegisterNodeType("bpmn:inclusiveGateway", typeof(BpmnNodeData), typeof(InclusiveGatewayNode));
+            RegisterNodeType("bpmn:eventBasedGateway", typeof(BpmnNodeData), typeof(EventBasedGatewayNode));
+
+            // 子流程节点
+            RegisterNodeType("bpmn:subProcess", typeof(BpmnNodeData), typeof(SubProcessNode));
+            RegisterNodeType("bpmn:callActivity", typeof(BpmnNodeData), typeof(CallActivityNode));
         }
 
         /// <summary>
@@ -126,6 +133,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
                 case BpmnNodeType.EndEvent:
                     node = new EndEventNode(data);
                     break;
+                case BpmnNodeType.IntermediateEvent:
+                    node = new IntermediateEventNode(data);
+                    break;
                 case BpmnNodeType.UserTask:
                     node = new UserTaskNode(data);
                     break;
@@ -135,6 +145,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
                 case BpmnNodeType.ScriptTask:
                     node = new ScriptTaskNode(data);
                     break;
+                case BpmnNodeType.ManualTask:
+                    node = new ManualTaskNode(data);
+                    break;
                 case BpmnNodeType.ExclusiveGateway:
                     node = new ExclusiveGatewayNode(data);
                     break;
@@ -143,6 +156,15 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
                     break;
                 case BpmnNodeType.InclusiveGateway:
                     node = new InclusiveGatewayNode(data);
+                    break;
+                case BpmnNodeType.EventBasedGateway:
+                    node = new EventBasedGatewayNode(data);
+                    break;
+                case BpmnNodeType.SubProcess:
+                    node = new SubProcessNode(data);
+                    break;
+                case BpmnNodeType.CallActivity:
+                    node = new CallActivityNode(data);
                     break;
                 default:
                     throw new NotSupportedException(string.Format("Node type {0} is not supported", nodeType));
@@ -185,18 +207,25 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Plugins.BpmnPlugin
             return new List<BpmnToolboxItem>
             {
                 // 事件类别
-                new BpmnToolboxItem { Category = "事件", Name = "开始事件", NodeType = BpmnNodeType.StartEvent, Icon = "●" },
-                new BpmnToolboxItem { Category = "事件", Name = "结束事件", NodeType = BpmnNodeType.EndEvent, Icon = "◉" },
+                new BpmnToolboxItem { Category = "事件", Name = "开始事件", NodeType = BpmnNodeType.StartEvent, Icon = "●", Description = "BPMN流程开始" },
+                new BpmnToolboxItem { Category = "事件", Name = "结束事件", NodeType = BpmnNodeType.EndEvent, Icon = "◉", Description = "BPMN流程结束" },
+                new BpmnToolboxItem { Category = "事件", Name = "中间事件", NodeType = BpmnNodeType.IntermediateEvent, Icon = "◎", Description = "中间事件捕获/抛出" },
                 
                 // 任务类别
-                new BpmnToolboxItem { Category = "任务", Name = "用户任务", NodeType = BpmnNodeType.UserTask, Icon = "👤" },
-                new BpmnToolboxItem { Category = "任务", Name = "服务任务", NodeType = BpmnNodeType.ServiceTask, Icon = "⚙" },
-                new BpmnToolboxItem { Category = "任务", Name = "脚本任务", NodeType = BpmnNodeType.ScriptTask, Icon = "📜" },
+                new BpmnToolboxItem { Category = "任务", Name = "用户任务", NodeType = BpmnNodeType.UserTask, Icon = "👤", Description = "需要人工处理的任务" },
+                new BpmnToolboxItem { Category = "任务", Name = "服务任务", NodeType = BpmnNodeType.ServiceTask, Icon = "⚙", Description = "自动服务调用" },
+                new BpmnToolboxItem { Category = "任务", Name = "脚本任务", NodeType = BpmnNodeType.ScriptTask, Icon = "📜", Description = "执行脚本代码" },
+                new BpmnToolboxItem { Category = "任务", Name = "手动任务", NodeType = BpmnNodeType.ManualTask, Icon = "✋", Description = "手动执行的任务" },
                 
                 // 网关类别
-                new BpmnToolboxItem { Category = "网关", Name = "排他网关", NodeType = BpmnNodeType.ExclusiveGateway, Icon = "◇✕" },
-                new BpmnToolboxItem { Category = "网关", Name = "并行网关", NodeType = BpmnNodeType.ParallelGateway, Icon = "◇+" },
-                new BpmnToolboxItem { Category = "网关", Name = "包容网关", NodeType = BpmnNodeType.InclusiveGateway, Icon = "◇○" }
+                new BpmnToolboxItem { Category = "网关", Name = "排他网关", NodeType = BpmnNodeType.ExclusiveGateway, Icon = "◇✕", Description = "条件分支（互斥）" },
+                new BpmnToolboxItem { Category = "网关", Name = "并行网关", NodeType = BpmnNodeType.ParallelGateway, Icon = "◇+", Description = "并行分支/合并" },
+                new BpmnToolboxItem { Category = "网关", Name = "包容网关", NodeType = BpmnNodeType.InclusiveGateway, Icon = "◇○", Description = "条件分支（包容）" },
+                new BpmnToolboxItem { Category = "网关", Name = "事件网关", NodeType = BpmnNodeType.EventBasedGateway, Icon = "◇⬟", Description = "基于事件的分支" },
+                
+                // 子流程类别
+                new BpmnToolboxItem { Category = "子流程", Name = "子流程", NodeType = BpmnNodeType.SubProcess, Icon = "▭", Description = "嵌套子流程" },
+                new BpmnToolboxItem { Category = "子流程", Name = "调用活动", NodeType = BpmnNodeType.CallActivity, Icon = "⊞", Description = "调用外部流程" }
             };
         }
 

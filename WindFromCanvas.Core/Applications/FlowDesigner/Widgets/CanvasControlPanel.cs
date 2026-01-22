@@ -51,6 +51,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
         #region 事件
 
         public event EventHandler MinimapToggleRequested;
+        public event EventHandler ZoomInRequested;
+        public event EventHandler ZoomOutRequested;
         public event EventHandler<float> ZoomChanged;
         public event EventHandler FitToViewRequested;
         public event EventHandler<bool> ModeChanged; // true = grab mode, false = select mode
@@ -201,7 +203,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
             // 缩小按钮
             _zoomOutButton = CreateIconButton("−", "缩小 (Ctrl+-)", theme);
             _zoomOutButton.Location = new Point(0, 2);
-            _zoomOutButton.Click += (s, e) => SetZoom(ZoomFactor - ZoomStep);
+            _zoomOutButton.Click += (s, e) =>
+            {
+                SetZoom(ZoomFactor - ZoomStep);
+                ZoomOutRequested?.Invoke(this, e);
+            };
             zoomGroup.Controls.Add(_zoomOutButton);
 
             // 缩放滑块
@@ -228,7 +234,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
             // 放大按钮
             _zoomInButton = CreateIconButton("+", "放大 (Ctrl++)", theme);
             _zoomInButton.Location = new Point(165, 2);
-            _zoomInButton.Click += (s, e) => SetZoom(ZoomFactor + ZoomStep);
+            _zoomInButton.Click += (s, e) =>
+            {
+                SetZoom(ZoomFactor + ZoomStep);
+                ZoomInRequested?.Invoke(this, e);
+            };
             zoomGroup.Controls.Add(_zoomInButton);
 
             // 7.4.3 缩放百分比显示
@@ -428,6 +438,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.Widgets
         {
             _isGrabMode = isGrabMode;
             UpdateModeButtons();
+        }
+
+        /// <summary>
+        /// 更新缩放标签显示
+        /// </summary>
+        public void UpdateZoomLabel()
+        {
+            UpdateZoomControls();
         }
 
         #endregion

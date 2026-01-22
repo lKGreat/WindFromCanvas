@@ -69,6 +69,8 @@
     <Compile Include="Applications\FlowDesigner\Models\NodeStatus.cs" />
     <Compile Include="Applications\FlowDesigner\Models\NoteData.cs" />
     <Compile Include="Applications\FlowDesigner\Models\FlowConnectionData.cs" />
+    <Compile Include="Applications\FlowDesigner\Models\NodeSizeConstants.cs" />
+    <Compile Include="Applications\FlowDesigner\Models\NodeColorConstants.cs" />
     <Compile Include="Applications\FlowDesigner\Themes\ThemeConfig.cs" />
     <Compile Include="Applications\FlowDesigner\Themes\ThemeManager.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\FlowNode.cs" />
@@ -77,6 +79,8 @@
     <Compile Include="Applications\FlowDesigner\Nodes\DecisionNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\LoopNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\EndNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Nodes\CodeNode.cs" />
+    <Compile Include="Applications\FlowDesigner\Nodes\PieceNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\NoteNode.cs" />
     <Compile Include="Applications\FlowDesigner\Nodes\RouterNode.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\RouterConnection.cs" />
