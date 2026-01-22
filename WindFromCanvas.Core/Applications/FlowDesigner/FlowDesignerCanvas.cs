@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using WindFromCanvas.Core;
 using WindFromCanvasCoreCanvas = WindFromCanvas.Core.Canvas;
 using WindFromCanvas.Core.Applications.FlowDesigner.Models;
+using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
 using WindFromCanvas.Core.Applications.FlowDesigner.Nodes;
 using WindFromCanvas.Core.Applications.FlowDesigner.Connections;
 using WindFromCanvas.Core.Applications.FlowDesigner.Commands;
@@ -27,6 +28,11 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 流程文档
         /// </summary>
         public FlowDocument Document { get; set; }
+
+        /// <summary>
+        /// 坐标变换模型（管理缩放和平移）
+        /// </summary>
+        public TransformModel Transform { get; private set; }
 
         /// <summary>
         /// 所有节点
@@ -196,6 +202,10 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             Document = new FlowDocument();
             BackgroundColor = Color.FromArgb(250, 250, 250);
             CommandManager = new CommandManager();
+            
+            // 初始化坐标变换模型
+            Transform = new TransformModel();
+            Transform.PropertyChanged += Transform_PropertyChanged;
             
             // 订阅节点拖拽事件
             this.MouseDown += FlowDesignerCanvas_MouseDown;
@@ -2281,5 +2291,31 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             Document.Connections.Add(connectionData);
             return connection;
         }
+
+        #region TransformModel集成
+
+        /// <summary>
+        /// TransformModel属性变更事件处理
+        /// 当缩放或平移发生变化时，重绘画布
+        /// </summary>
+        private void Transform_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(TransformModel.Zoom) || 
+                e.PropertyName == nameof(TransformModel.Translation))
+            {
+                // 触发重绘
+                Invalidate();
+            }
+        }
+
+        /// <summary>
+        /// 获取画布可见区域（Canvas坐标系）
+        /// </summary>
+        public RectangleF GetVisibleCanvasBounds()
+        {
+            return Transform.GetVisibleBounds(new SizeF(Width, Height));
+        }
+
+        #endregion
     }
 }

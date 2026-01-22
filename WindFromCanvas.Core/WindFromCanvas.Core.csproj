@@ -116,6 +116,8 @@
     <Compile Include="Applications\FlowDesigner\Core\Models\FlowVersion.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Models\Note.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Models\RouterBranch.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\GraphModel.cs" />
+    <Compile Include="Applications\FlowDesigner\Core\Models\TransformModel.cs" />
     <!-- Core Enums -->
     <Compile Include="Applications\FlowDesigner\Core\Enums\FlowActionType.cs" />
     <Compile Include="Applications\FlowDesigner\Core\Enums\FlowTriggerType.cs" />

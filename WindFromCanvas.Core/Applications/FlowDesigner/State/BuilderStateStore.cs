@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using WindFromCanvas.Core.Applications.FlowDesigner.Core.Models;
 using WindFromCanvas.Core.Applications.FlowDesigner.Commands;
+using WindFromCanvas.Core.Applications.FlowDesigner.Models;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner.State
 {
@@ -27,6 +28,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
         public SelectionState Selection { get; private set; }
         public DragState Drag { get; private set; }
 
+        // 中央图数据管理（GraphModel）
+        public GraphModel Graph { get; private set; }
+
         // 命令管理器（用于撤销/重做）
         public CommandManager CommandManager { get; private set; }
 
@@ -36,7 +40,25 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner.State
             Flow = new FlowState();
             Selection = new SelectionState();
             Drag = new DragState();
+            Graph = new GraphModel();
             CommandManager = new CommandManager();
+            
+            // 订阅GraphModel变更，同步到Selection状态
+            Graph.PropertyChanged += OnGraphPropertyChanged;
+        }
+        
+        /// <summary>
+        /// GraphModel属性变更处理
+        /// </summary>
+        private void OnGraphPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(GraphModel.SelectedNodeIds))
+            {
+                // 同步选择状态
+                Selection.SelectedNodeIds.Clear();
+                Selection.SelectedNodeIds.AddRange(Graph.SelectedNodeIds);
+                OnPropertyChanged(nameof(Selection));
+            }
         }
 
         /// <summary>
