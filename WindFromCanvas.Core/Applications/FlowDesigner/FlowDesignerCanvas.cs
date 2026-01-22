@@ -17,6 +17,10 @@ using WindFromCanvas.Core.Applications.FlowDesigner.Validation;
 using WindFromCanvas.Core.Applications.FlowDesigner.Animation;
 using WindFromCanvas.Core.Applications.FlowDesigner.Rendering;
 using WindFromCanvas.Core.Applications.FlowDesigner.State;
+using WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Layout;
+using WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Nodes;
+using WindFromCanvas.Core.Applications.FlowDesigner.Canvas.Edges;
+using WindFromCanvas.Core.Applications.FlowDesigner.Interaction;
 using WindFromCanvas.Core.Events;
 
 namespace WindFromCanvas.Core.Applications.FlowDesigner
@@ -40,6 +44,31 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// 分层渲染器（管理6层渲染）
         /// </summary>
         private LayeredRenderer _layeredRenderer;
+
+        /// <summary>
+        /// 图构建器（从FlowVersion构建FlowGraph）
+        /// </summary>
+        private FlowGraphBuilder _graphBuilder;
+
+        /// <summary>
+        /// 当前的FlowGraph（用于渲染）
+        /// </summary>
+        private FlowGraph _currentGraph;
+
+        /// <summary>
+        /// 选择管理器（处理单选、框选、多选）
+        /// </summary>
+        private SelectionManager _selectionManager;
+
+        /// <summary>
+        /// Invalidate防抖定时器（优化重绘频率）
+        /// </summary>
+        private System.Windows.Forms.Timer _invalidateDebounceTimer;
+
+        /// <summary>
+        /// 是否有待处理的Invalidate请求
+        /// </summary>
+        private bool _hasPendingInvalidate = false;
 
         /// <summary>
         /// 所有节点
@@ -216,6 +245,15 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             
             // 初始化分层渲染器
             InitializeLayeredRenderer();
+            
+            // 初始化图构建器
+            _graphBuilder = new FlowGraphBuilder();
+            
+            // 初始化Invalidate防抖定时器（2.3.4 优化Invalidate调用频率）
+            InitializeInvalidateDebounce();
+            
+            // 3.1.1 初始化选择管理器
+            _selectionManager = new SelectionManager(BuilderStateStore.Instance);
             
             // 订阅节点拖拽事件
             this.MouseDown += FlowDesignerCanvas_MouseDown;
@@ -556,6 +594,12 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             {
                 var worldPoint = ScreenToWorld(e.Location);
                 var hitNode = HitTestNode(worldPoint);
+                
+                // 3.1.5 处理Ctrl多选逻辑
+                bool isCtrlPressed = (Control.ModifierKeys & Keys.Control) == Keys.Control;
+                // 3.1.6 处理Shift范围选择逻辑
+                bool isShiftPressed = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
+
                 if (hitNode != null)
                 {
                     // 检查是否点击了输出端口
@@ -568,6 +612,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                         return;
                     }
 
+                    // 3.1.2 使用SelectionManager选择节点
+                    // 获取对应的ICanvasNode
+                    var canvasNode = GetCanvasNodeFromFlowNode(hitNode);
+                    if (canvasNode != null)
+                    {
+                        _selectionManager.SelectNode(canvasNode, isCtrlPressed);
+                    }
+
                     _draggingNode = hitNode;
                     _dragPreviewPosition = e.Location;
                     
@@ -576,18 +628,31 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     {
                         _draggingNodes = new List<FlowNode>(_selectedNodes);
                     }
-                    else
+                    else if (!isCtrlPressed)
                     {
                         _draggingNodes.Clear();
                         _draggingNodes.Add(hitNode);
                     }
+
+                    // 3.1.7 标记选择层需要重绘（视觉反馈）
+                    MarkLayerDirty(RenderLayerType.Selection);
                 }
                 else
                 {
-                    // 开始框选
+                    // 3.1.2 开始框选
                     _isSelecting = true;
                     _selectionStart = e.Location;
                     _selectionEnd = e.Location;
+                    
+                    // 使用SelectionManager开始框选
+                    var canvasPoint = Transform.ClientToCanvas(e.Location);
+                    _selectionManager.StartSelection(canvasPoint);
+                    
+                    // 如果没有按Ctrl，清除现有选择
+                    if (!isCtrlPressed)
+                    {
+                        _selectedNodes.Clear();
+                    }
                 }
             }
         }
@@ -600,12 +665,21 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 var deltaY = e.Y - _panStartPoint.Y;
                 PanOffset = new PointF(PanOffset.X + deltaX, PanOffset.Y + deltaY);
                 _panStartPoint = e.Location;
-                Invalidate();
+                
+                // 2.4.5 优化滚动时的重绘性能（使用防抖）
+                InvalidateDebounced();
             }
             else if (_isSelecting)
             {
+                // 3.1.3 更新框选
                 _selectionEnd = e.Location;
-                Invalidate();
+                
+                // 使用SelectionManager更新框选
+                var canvasPoint = Transform.ClientToCanvas(e.Location);
+                _selectionManager.UpdateSelection(canvasPoint);
+                
+                // 3.1.7 标记选择层需要重绘
+                MarkLayerDirty(RenderLayerType.Selection);
             }
             else if (_isCreatingConnection && _connectionSourceNode != null)
             {
@@ -615,31 +689,46 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 var worldPoint = ScreenToWorld(e.Location);
                 var targetNode = HitTestNode(worldPoint);
                 
+                // 清除之前的锚点高亮
+                _hoveredAnchor = null;
+                
                 // 清除之前的目标节点端口高亮
                 if (_potentialTargetNode != null && _potentialTargetNode != targetNode)
                 {
                     _potentialTargetNode.HoveredInputPortIndex = -1;
-                    Invalidate();
                 }
                 
                 // 设置新的目标节点
                 _potentialTargetNode = targetNode;
                 
-                // 高亮目标节点的输入端口
+                // 3.3.4 / 3.3.5 锚点感应和连接规则校验
                 if (_potentialTargetNode != null && _potentialTargetNode != _connectionSourceNode)
                 {
-                    // 检测鼠标是否接近输入端口
-                    var portIndex = _potentialTargetNode.HitTestPortIndex(worldPoint, false);
-                    if (portIndex.HasValue)
+                    // 3.3.5 实时校验连接规则
+                    bool canConnect = ValidateConnection(_connectionSourceNode, _potentialTargetNode);
+                    
+                    if (canConnect)
                     {
-                        _potentialTargetNode.HoveredInputPortIndex = portIndex.Value;
-                        // 端口吸附：将预览终点吸附到端口位置
-                        var port = _potentialTargetNode.InputPorts[portIndex.Value];
-                        _connectionPreviewEnd = WorldToScreen(port);
-                    }
-                    else
-                    {
-                        _potentialTargetNode.HoveredInputPortIndex = -1;
+                        // 3.3.2 查找最近的锚点
+                        var nearestAnchor = FindNearestAnchor(worldPoint, _potentialTargetNode);
+                        
+                        if (nearestAnchor != null)
+                        {
+                            // 3.3.4 高亮锚点（端口）
+                            _hoveredAnchor = nearestAnchor;
+                            
+                            // 锚点吸附：将预览终点吸附到锚点位置
+                            var nodeBounds = _potentialTargetNode.GetBounds();
+                            var nodeCenter = new PointF(
+                                nodeBounds.X + nodeBounds.Width / 2,
+                                nodeBounds.Y + nodeBounds.Height / 2
+                            );
+                            var anchorWorldPos = new PointF(
+                                nodeCenter.X + nearestAnchor.RelativeX * nodeBounds.Width,
+                                nodeCenter.Y + nearestAnchor.RelativeY * nodeBounds.Height
+                            );
+                            _connectionPreviewEnd = WorldToScreen(anchorWorldPos);
+                        }
                     }
                 }
                 
@@ -671,10 +760,20 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             {
                 if (_isSelecting)
                 {
-                    // 完成框选
-                    SelectNodesInRectangle();
+                    // 3.1.4 完成框选
+                    bool isCtrlPressed = (Control.ModifierKeys & Keys.Control) == Keys.Control;
+                    
+                    // 使用SelectionManager完成框选
+                    var canvasNodes = _currentGraph?.Nodes ?? new List<ICanvasNode>();
+                    _selectionManager.EndSelection(canvasNodes.ToList(), isCtrlPressed);
+                    
+                    // 同步选择状态到_selectedNodes
+                    SyncSelectionState();
+                    
                     _isSelecting = false;
-                    Invalidate();
+                    
+                    // 3.1.7 标记选择层需要重绘
+                    MarkLayerDirty(RenderLayerType.Selection);
                 }
                 else if (_isCreatingConnection)
                 {
@@ -703,7 +802,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                     _isCreatingConnection = false;
                     _connectionSourceNode = null;
                     _connectionPreviewAnimationOffset = 0f;
-                    Invalidate();
+                    InvalidateDebounced();
                 }
 
                 _draggingNode = null;
@@ -2176,6 +2275,9 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             if (e.PropertyName == nameof(TransformModel.Zoom) || 
                 e.PropertyName == nameof(TransformModel.Translation))
             {
+                // 2.4.4 更新视口边界（虚拟滚动）
+                UpdateViewportBounds();
+
                 // 标记所有层为脏，需要重绘
                 _layeredRenderer?.MarkLayerDirty(RenderLayerType.Background);
                 _layeredRenderer?.MarkLayerDirty(RenderLayerType.Grid);
@@ -2184,8 +2286,8 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 _layeredRenderer?.MarkLayerDirty(RenderLayerType.Selection);
                 _layeredRenderer?.MarkLayerDirty(RenderLayerType.Overlay);
                 
-                // 触发重绘
-                Invalidate();
+                // 触发重绘（使用防抖优化）
+                InvalidateDebounced();
             }
         }
 
@@ -2298,7 +2400,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
-        /// 渲染连线层
+        /// 渲染连线层（2.4.3 实现连线可见性过滤）
         /// </summary>
         private void RenderConnectionLayer(Graphics g, RectangleF viewport)
         {
@@ -2307,12 +2409,14 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
             g.ScaleTransform(Transform.Zoom, Transform.Zoom);
 
-            // 绘制所有连线
-            foreach (var connection in _connections.Values)
+            // 2.4.3 获取可见连线（虚拟滚动优化）
+            var visibleConnections = GetVisibleConnections(viewport);
+
+            // 绘制可见连线
+            foreach (var connection in visibleConnections)
             {
                 if (connection != null && connection.Visible)
                 {
-                    // 简单的边界检查（可以优化）
                     connection.Draw(g);
                 }
             }
@@ -2321,7 +2425,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         }
 
         /// <summary>
-        /// 渲染节点层
+        /// 渲染节点层（2.4.2 实现节点可见性过滤）
         /// </summary>
         private void RenderNodeLayer(Graphics g, RectangleF viewport)
         {
@@ -2330,23 +2434,16 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             g.TranslateTransform(Transform.Translation.X, Transform.Translation.Y);
             g.ScaleTransform(Transform.Zoom, Transform.Zoom);
 
+            // 2.4.2 获取可见节点（虚拟滚动优化）
+            var visibleNodes = GetVisibleNodes(viewport);
+            
             // 按ZIndex排序绘制节点
-            var sortedNodes = _nodes.Values.OrderBy(n => n.ZIndex).ToList();
+            var sortedNodes = visibleNodes.OrderBy(n => n.ZIndex).ToList();
             
             foreach (var node in sortedNodes)
             {
                 if (node != null && node.Visible)
                 {
-                    // 视口裁剪：只渲染可见区域的节点
-                    if (EnableViewportCulling)
-                    {
-                        var bounds = node.GetBounds();
-                        if (!viewport.IntersectsWith(bounds))
-                        {
-                            continue;
-                        }
-                    }
-
                     // 绘制节点
                     node.Draw(g);
                 }
@@ -2427,17 +2524,52 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 }
             }
 
-            // 绘制连线预览
+            // 3.3.3 / 3.3.4 绘制连线预览（虚线预连线+端口高亮）
             if (_isCreatingConnection && _connectionSourceNode != null)
             {
-                using (var pen = new Pen(Color.FromArgb(150, 100, 100, 100), 2f / Transform.Zoom))
+                var sourceBounds = _connectionSourceNode.GetBounds();
+                var sourceCenter = new PointF(
+                    sourceBounds.X + sourceBounds.Width / 2,
+                    sourceBounds.Y + sourceBounds.Height / 2);
+
+                var previewEnd = Transform.ClientToCanvas(_connectionPreviewEnd);
+
+                // 根据是否可以连接选择颜色
+                Color previewColor = Color.Gray;
+                if (_potentialTargetNode != null)
+                {
+                    bool canConnect = ValidateConnection(_connectionSourceNode, _potentialTargetNode);
+                    previewColor = canConnect ? Color.FromArgb(59, 130, 246) : Color.FromArgb(239, 68, 68);
+                }
+
+                // 3.3.3 绘制虚线预连线
+                using (var pen = new Pen(Color.FromArgb(150, previewColor), 2f / Transform.Zoom))
                 {
                     pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
-                    var sourceBounds = _connectionSourceNode.GetBounds();
-                    var sourceCenter = new PointF(
-                        sourceBounds.X + sourceBounds.Width / 2,
-                        sourceBounds.Y + sourceBounds.Height / 2);
-                    g.DrawLine(pen, sourceCenter, _connectionPreviewEnd);
+                    g.DrawLine(pen, sourceCenter, previewEnd);
+                }
+
+                // 3.3.4 绘制端口高亮动画
+                if (_hoveredAnchor != null && _potentialTargetNode != null)
+                {
+                    var nodeBounds = _potentialTargetNode.GetBounds();
+                    var nodeCenter = new PointF(
+                        nodeBounds.X + nodeBounds.Width / 2,
+                        nodeBounds.Y + nodeBounds.Height / 2
+                    );
+                    var anchorPos = new PointF(
+                        nodeCenter.X + _hoveredAnchor.RelativeX * nodeBounds.Width,
+                        nodeCenter.Y + _hoveredAnchor.RelativeY * nodeBounds.Height
+                    );
+
+                    // 绘制脉冲效果的锚点高亮
+                    using (var brush = new SolidBrush(Color.FromArgb(100, 59, 130, 246)))
+                    using (var pen = new Pen(Color.FromArgb(200, 59, 130, 246), 2f / Transform.Zoom))
+                    {
+                        float radius = 8f / Transform.Zoom;
+                        g.FillEllipse(brush, anchorPos.X - radius, anchorPos.Y - radius, radius * 2, radius * 2);
+                        g.DrawEllipse(pen, anchorPos.X - radius, anchorPos.Y - radius, radius * 2, radius * 2);
+                    }
                 }
             }
 
@@ -2466,6 +2598,720 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
             float width = Math.Abs(end.X - start.X);
             float height = Math.Abs(end.Y - start.Y);
             return new RectangleF(x, y, width, height);
+        }
+
+        #endregion
+
+        #region FlowGraphBuilder集成
+
+        /// <summary>
+        /// 从FlowVersion构建并加载FlowGraph到画布
+        /// 2.2.4 实现图数据到画布对象的映射
+        /// </summary>
+        public void LoadFlowVersion(FlowVersion flowVersion)
+        {
+            if (flowVersion == null)
+                return;
+
+            // 清空当前画布
+            ClearCanvas();
+
+            // 使用FlowGraphBuilder构建FlowGraph
+            _currentGraph = _graphBuilder.BuildGraph(flowVersion);
+            
+            if (_currentGraph == null)
+                return;
+
+            // 2.2.4 将FlowGraph的节点映射到画布对象
+            MapGraphNodesToCanvas(_currentGraph);
+
+            // 2.2.4 将FlowGraph的边缘映射到画布对象  
+            MapGraphEdgesToCanvas(_currentGraph);
+
+            // 将图传递给LayeredRenderer
+            _layeredRenderer?.SetGraph(_currentGraph);
+
+            // 2.2.5 触发画布刷新
+            RefreshCanvas();
+        }
+
+        /// <summary>
+        /// 将FlowGraph的节点映射到画布FlowNode对象
+        /// </summary>
+        private void MapGraphNodesToCanvas(FlowGraph graph)
+        {
+            foreach (var canvasNode in graph.Nodes)
+            {
+                // 根据Canvas节点类型创建对应的FlowNode
+                FlowNode flowNode = null;
+
+                if (canvasNode is StepNode stepNode)
+                {
+                    // 从StepNode创建FlowNode
+                    flowNode = CreateFlowNodeFromStepNode(stepNode);
+                }
+                else if (canvasNode is AddButtonNode || canvasNode is BigAddButtonNode)
+                {
+                    // 添加按钮节点，暂时跳过
+                    // TODO: 未来可以实现特殊的按钮节点类型
+                    continue;
+                }
+                else if (canvasNode is GraphEndNode)
+                {
+                    // 结束节点，暂时跳过或创建虚拟节点
+                    continue;
+                }
+
+                if (flowNode != null)
+                {
+                    // 设置节点位置
+                    flowNode.X = canvasNode.Position.X;
+                    flowNode.Y = canvasNode.Position.Y;
+
+                    // 添加到画布
+                    AddNode(flowNode);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 从StepNode创建FlowNode
+        /// </summary>
+        private FlowNode CreateFlowNodeFromStepNode(StepNode stepNode)
+        {
+            if (stepNode.Step == null)
+                return null;
+
+            // 根据Step类型创建对应的FlowNode
+            var nodeData = new FlowNodeData
+            {
+                Name = stepNode.Step.Name,
+                DisplayName = stepNode.Step.DisplayName ?? stepNode.Step.Name,
+                Type = GetNodeTypeFromStep(stepNode.Step),
+                Position = stepNode.Position,
+                Valid = stepNode.Step.Valid,
+                Settings = new Dictionary<string, object>()
+            };
+
+            // 创建FlowNode实例
+            FlowNode flowNode = null;
+            switch (nodeData.Type)
+            {
+                case FlowNodeType.Start:
+                    flowNode = new StartNode(nodeData);
+                    break;
+                case FlowNodeType.Process:
+                    flowNode = new ProcessNode(nodeData);
+                    break;
+                case FlowNodeType.Decision:
+                    flowNode = new DecisionNode(nodeData);
+                    break;
+                case FlowNodeType.Loop:
+                    flowNode = new LoopNode(nodeData);
+                    break;
+                case FlowNodeType.End:
+                    flowNode = new EndNode(nodeData);
+                    break;
+                default:
+                    flowNode = new ProcessNode(nodeData);
+                    break;
+            }
+
+            return flowNode;
+        }
+
+        /// <summary>
+        /// 从IStep获取FlowNodeType
+        /// </summary>
+        private FlowNodeType GetNodeTypeFromStep(IStep step)
+        {
+            if (step is FlowTrigger)
+                return FlowNodeType.Start;
+            else if (step is LoopOnItemsAction)
+                return FlowNodeType.Loop;
+            else if (step is RouterAction)
+                return FlowNodeType.Decision;
+            else if (step is FlowAction)
+                return FlowNodeType.Process;
+            else
+                return FlowNodeType.Process;
+        }
+
+        /// <summary>
+        /// 将FlowGraph的边缘映射到画布FlowConnection对象
+        /// </summary>
+        private void MapGraphEdgesToCanvas(FlowGraph graph)
+        {
+            foreach (var canvasEdge in graph.Edges)
+            {
+                // 检查源节点和目标节点是否存在
+                if (!_nodes.ContainsKey(canvasEdge.SourceId) || 
+                    !_nodes.ContainsKey(canvasEdge.TargetId))
+                {
+                    // 节点不存在，跳过该边缘
+                    continue;
+                }
+
+                var sourceNode = _nodes[canvasEdge.SourceId];
+                var targetNode = _nodes[canvasEdge.TargetId];
+
+                // 创建连接数据
+                var connectionData = FlowConnectionData.Create(
+                    canvasEdge.SourceId,
+                    canvasEdge.TargetId,
+                    type: GetConnectionTypeFromEdge(canvasEdge)
+                );
+
+                // 创建连接对象
+                var connection = new Connections.FlowConnection(connectionData, sourceNode, targetNode);
+
+                // 添加到画布
+                AddConnection(connection);
+            }
+        }
+
+        /// <summary>
+        /// 从ICanvasEdge获取FlowConnectionType
+        /// </summary>
+        private FlowConnectionType GetConnectionTypeFromEdge(ICanvasEdge edge)
+        {
+            if (edge is LoopStartEdge)
+                return FlowConnectionType.LoopStartEdge;
+            else if (edge is LoopReturnEdge)
+                return FlowConnectionType.LoopReturnEdge;
+            else if (edge is RouterStartEdge)
+                return FlowConnectionType.RouterStartEdge;
+            else if (edge is RouterEndEdge)
+                return FlowConnectionType.RouterEndEdge;
+            else
+                return FlowConnectionType.StraightLine;
+        }
+
+        /// <summary>
+        /// 清空画布
+        /// </summary>
+        private void ClearCanvas()
+        {
+            // 清空节点
+            _nodes.Clear();
+            
+            // 清空连接
+            _connections.Clear();
+
+            // 清空选择
+            _selectedNodes.Clear();
+        }
+
+        /// <summary>
+        /// 刷新画布 - 2.2.5 实现画布刷新触发机制
+        /// </summary>
+        public void RefreshCanvas()
+        {
+            // 标记所有层为脏，需要重绘
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Background);
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Grid);
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Connection);
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Node);
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Selection);
+            _layeredRenderer?.MarkLayerDirty(RenderLayerType.Overlay);
+
+            // 触发重绘（使用防抖优化）
+            InvalidateDebounced();
+
+            // 记录性能
+            PerformanceMonitor.Instance.RecordFrame();
+        }
+
+        #endregion
+
+        #region 渐进连线（Phase 3.3）
+
+        /// <summary>
+        /// 锚点感应距离阈值（像素）
+        /// </summary>
+        private const float AnchorSnapThreshold = 20f;
+
+        /// <summary>
+        /// 当前悬停的锚点
+        /// </summary>
+        private AnchorPoint _hoveredAnchor;
+
+        /// <summary>
+        /// 3.3.1 / 3.3.2 检测最近的锚点（实时距离计算和阈值检测）
+        /// </summary>
+        private AnchorPoint FindNearestAnchor(PointF worldPoint, FlowNode targetNode)
+        {
+            if (targetNode == null || targetNode.Data == null)
+                return null;
+
+            // 获取目标节点的锚点列表
+            var anchors = targetNode.Data.GetAnchors();
+            if (anchors == null || anchors.Count == 0)
+                return null;
+
+            AnchorPoint nearestAnchor = null;
+            float minDistance = float.MaxValue;
+
+            var nodeBounds = targetNode.GetBounds();
+            var nodeCenter = new PointF(
+                nodeBounds.X + nodeBounds.Width / 2,
+                nodeBounds.Y + nodeBounds.Height / 2
+            );
+
+            foreach (var anchor in anchors)
+            {
+                // 只检测输入锚点
+                if (anchor.Direction != AnchorDirection.Input)
+                    continue;
+
+                // 计算锚点的世界坐标
+                var anchorWorldPos = new PointF(
+                    nodeCenter.X + anchor.RelativeX * nodeBounds.Width,
+                    nodeCenter.Y + anchor.RelativeY * nodeBounds.Height
+                );
+
+                // 3.3.1 计算距离
+                float distance = CalculateDistance(worldPoint, anchorWorldPos);
+
+                // 3.3.2 检查是否在阈值内
+                if (distance < AnchorSnapThreshold && distance < minDistance)
+                {
+                    minDistance = distance;
+                    nearestAnchor = anchor;
+                }
+            }
+
+            return nearestAnchor;
+        }
+
+        /// <summary>
+        /// 计算两点之间的距离
+        /// </summary>
+        private float CalculateDistance(PointF p1, PointF p2)
+        {
+            float dx = p2.X - p1.X;
+            float dy = p2.Y - p1.Y;
+            return (float)Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>
+        /// 3.3.5 验证连接规则（实时校验）
+        /// </summary>
+        private bool ValidateConnection(FlowNode sourceNode, FlowNode targetNode)
+        {
+            if (sourceNode == null || targetNode == null)
+                return false;
+
+            // 不能连接到自己
+            if (sourceNode == targetNode)
+                return false;
+
+            // 使用FlowNodeData的CanConnectTo方法进行规则校验
+            if (sourceNode.Data != null && targetNode.Data != null)
+            {
+                if (!sourceNode.Data.CanConnectTo(targetNode.Data))
+                    return false;
+            }
+
+            // 3.3.6 去重逻辑：检查是否已存在相同的连接
+            if (_connections.Values.Any(c => 
+                c.SourceNode == sourceNode && 
+                c.TargetNode == targetNode))
+            {
+                return false; // 已存在相同连接
+            }
+
+            // 检查循环连接（防止死循环）
+            if (WouldCreateCycle(sourceNode, targetNode))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 检查连接是否会创建循环
+        /// </summary>
+        private bool WouldCreateCycle(FlowNode sourceNode, FlowNode targetNode)
+        {
+            // 使用BFS检查从targetNode是否能到达sourceNode
+            var visited = new HashSet<string>();
+            var queue = new Queue<FlowNode>();
+            queue.Enqueue(targetNode);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (visited.Contains(current.Data?.Name))
+                    continue;
+
+                visited.Add(current.Data?.Name);
+
+                // 如果到达了sourceNode，说明会形成循环
+                if (current == sourceNode)
+                    return true;
+
+                // 查找所有从current出发的连接
+                var outgoingConnections = _connections.Values
+                    .Where(c => c.SourceNode == current);
+
+                foreach (var conn in outgoingConnections)
+                {
+                    if (conn.TargetNode != null)
+                    {
+                        queue.Enqueue(conn.TargetNode);
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        #endregion
+
+        #region SelectionManager集成（Phase 3.1）
+
+        /// <summary>
+        /// 获取FlowNode对应的ICanvasNode
+        /// </summary>
+        private ICanvasNode GetCanvasNodeFromFlowNode(FlowNode flowNode)
+        {
+            if (_currentGraph == null || flowNode == null)
+                return null;
+
+            // 查找匹配的ICanvasNode
+            return _currentGraph.Nodes.FirstOrDefault(n => n.Id == flowNode.Data?.Name);
+        }
+
+        /// <summary>
+        /// 3.1.7 同步选择状态（从SelectionManager到_selectedNodes）
+        /// </summary>
+        private void SyncSelectionState()
+        {
+            _selectedNodes.Clear();
+            
+            var stateStore = BuilderStateStore.Instance;
+            if (stateStore?.Selection?.SelectedNodeIds != null)
+            {
+                foreach (var nodeId in stateStore.Selection.SelectedNodeIds)
+                {
+                    if (_nodes.TryGetValue(nodeId, out var node))
+                    {
+                        _selectedNodes.Add(node);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 3.1.6 范围选择（从第一个选中节点到当前节点）
+        /// </summary>
+        private void SelectRange(FlowNode targetNode)
+        {
+            if (_selectedNodes.Count == 0 || targetNode == null)
+                return;
+
+            var firstSelected = _selectedNodes.First();
+            var firstBounds = firstSelected.GetBounds();
+            var targetBounds = targetNode.GetBounds();
+
+            // 计算包含两个节点的矩形
+            var minX = Math.Min(firstBounds.Left, targetBounds.Left);
+            var minY = Math.Min(firstBounds.Top, targetBounds.Top);
+            var maxX = Math.Max(firstBounds.Right, targetBounds.Right);
+            var maxY = Math.Max(firstBounds.Bottom, targetBounds.Bottom);
+
+            var selectionRect = new RectangleF(minX, minY, maxX - minX, maxY - minY);
+
+            // 选择矩形内的所有节点
+            foreach (var node in _nodes.Values)
+            {
+                var bounds = node.GetBounds();
+                if (selectionRect.IntersectsWith(bounds) && !_selectedNodes.Contains(node))
+                {
+                    _selectedNodes.Add(node);
+                }
+            }
+
+            // 更新状态存储
+            var stateStore = BuilderStateStore.Instance;
+            if (stateStore != null)
+            {
+                stateStore.Selection.SelectedNodeIds.Clear();
+                stateStore.Selection.SelectedNodeIds.AddRange(_selectedNodes.Select(n => n.Data?.Name).Where(n => n != null));
+                stateStore.SetSelectedNodes(stateStore.Selection.SelectedNodeIds.ToArray());
+            }
+
+            // 标记选择层需要重绘
+            MarkLayerDirty(RenderLayerType.Selection);
+        }
+
+        #endregion
+
+        #region 虚拟滚动（Phase 2.4）
+
+        /// <summary>
+        /// 2.4.1 / 2.4.2 获取可见节点（虚拟滚动优化）
+        /// 仅返回在视口范围内的节点
+        /// </summary>
+        private IEnumerable<FlowNode> GetVisibleNodes(RectangleF viewport)
+        {
+            // 扩展视口边界（预加载边缘节点，避免滚动时闪烁）
+            const float padding = 100f;
+            var expandedViewport = new RectangleF(
+                viewport.X - padding,
+                viewport.Y - padding,
+                viewport.Width + padding * 2,
+                viewport.Height + padding * 2
+            );
+
+            // 过滤可见节点
+            foreach (var node in _nodes.Values)
+            {
+                if (node == null || !node.Visible)
+                    continue;
+
+                var bounds = node.GetBounds();
+                
+                // 检查节点是否在扩展视口内
+                if (expandedViewport.IntersectsWith(bounds))
+                {
+                    yield return node;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 2.4.1 / 2.4.3 获取可见连线（虚拟滚动优化）
+        /// 仅返回在视口范围内的连线
+        /// </summary>
+        private IEnumerable<Connections.FlowConnection> GetVisibleConnections(RectangleF viewport)
+        {
+            // 扩展视口边界
+            const float padding = 100f;
+            var expandedViewport = new RectangleF(
+                viewport.X - padding,
+                viewport.Y - padding,
+                viewport.Width + padding * 2,
+                viewport.Height + padding * 2
+            );
+
+            // 过滤可见连线
+            foreach (var connection in _connections.Values)
+            {
+                if (connection == null || !connection.Visible)
+                    continue;
+
+                // 检查连线的两个端点是否在视口内
+                if (connection.SourceNode != null && connection.TargetNode != null)
+                {
+                    var sourceBounds = connection.SourceNode.GetBounds();
+                    var targetBounds = connection.TargetNode.GetBounds();
+
+                    // 如果任意一个端点在视口内，就渲染这条连线
+                    if (expandedViewport.IntersectsWith(sourceBounds) || 
+                        expandedViewport.IntersectsWith(targetBounds))
+                    {
+                        yield return connection;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 2.4.4 监听视口变化（滚动、缩放、平移）
+        /// 当视口变化时，更新GraphModel的ViewportBounds
+        /// </summary>
+        private void UpdateViewportBounds()
+        {
+            var viewport = GetVisibleCanvasBounds();
+            
+            // 更新GraphModel的视口边界（用于虚拟滚动）
+            var stateStore = BuilderStateStore.Instance;
+            if (stateStore?.Graph != null)
+            {
+                stateStore.Graph.ViewportBounds = viewport;
+            }
+        }
+
+        /// <summary>
+        /// 2.4.5 获取虚拟滚动统计信息（性能监控）
+        /// </summary>
+        public VirtualScrollStats GetVirtualScrollStats()
+        {
+            var viewport = GetVisibleCanvasBounds();
+            var visibleNodes = GetVisibleNodes(viewport).Count();
+            var visibleConnections = GetVisibleConnections(viewport).Count();
+
+            return new VirtualScrollStats
+            {
+                TotalNodes = _nodes.Count,
+                VisibleNodes = visibleNodes,
+                TotalConnections = _connections.Count,
+                VisibleConnections = visibleConnections,
+                CullingRatio = _nodes.Count > 0 ? (1.0f - (float)visibleNodes / _nodes.Count) : 0f
+            };
+        }
+
+        /// <summary>
+        /// 虚拟滚动统计信息（2.4.5 性能监控）
+        /// </summary>
+        public class VirtualScrollStats
+        {
+            public int TotalNodes { get; set; }
+            public int VisibleNodes { get; set; }
+            public int TotalConnections { get; set; }
+            public int VisibleConnections { get; set; }
+            public float CullingRatio { get; set; } // 裁剪比例（0-1，越大表示优化效果越好）
+        }
+
+        #endregion
+
+        #region 脏区域管理（Phase 2.3）
+
+        /// <summary>
+        /// 2.3.4 初始化Invalidate防抖定时器
+        /// 优化Invalidate调用频率，避免过度重绘
+        /// </summary>
+        private void InitializeInvalidateDebounce()
+        {
+            _invalidateDebounceTimer = new System.Windows.Forms.Timer();
+            _invalidateDebounceTimer.Interval = 16; // ~60 FPS (16ms)
+            _invalidateDebounceTimer.Tick += (s, e) =>
+            {
+                _invalidateDebounceTimer.Stop();
+                if (_hasPendingInvalidate)
+                {
+                    _hasPendingInvalidate = false;
+                    Invalidate();
+                }
+            };
+        }
+
+        /// <summary>
+        /// 2.3.4 使用防抖的Invalidate（优化调用频率）
+        /// </summary>
+        private void InvalidateDebounced()
+        {
+            _hasPendingInvalidate = true;
+            
+            if (!_invalidateDebounceTimer.Enabled)
+            {
+                _invalidateDebounceTimer.Start();
+            }
+        }
+
+        /// <summary>
+        /// 2.3.2 标记节点区域为脏（节点移动时调用）
+        /// </summary>
+        public void MarkNodeDirty(FlowNode node)
+        {
+            if (node == null)
+                return;
+
+            var bounds = node.GetBounds();
+            
+            // 转换为Client坐标
+            var clientBounds = Transform.CanvasRectToClient(bounds);
+
+            // 标记节点层和连线层的脏区域（节点移动会影响连线）
+            var layerManager = GetLayerManager();
+            layerManager?.MarkRegionDirty(RenderLayerType.Node, clientBounds);
+            layerManager?.MarkRegionDirty(RenderLayerType.Connection, clientBounds);
+            layerManager?.MarkRegionDirty(RenderLayerType.Selection, clientBounds);
+
+            // 触发重绘
+            InvalidateDebounced();
+        }
+
+        /// <summary>
+        /// 2.3.3 标记连线区域为脏（连线更新时调用）
+        /// </summary>
+        public void MarkConnectionDirty(Connections.FlowConnection connection)
+        {
+            if (connection == null)
+                return;
+
+            // 计算连线的边界矩形
+            var bounds = CalculateConnectionBounds(connection);
+            
+            // 转换为Client坐标
+            var clientBounds = Transform.CanvasRectToClient(bounds);
+
+            // 标记连线层的脏区域
+            var layerManager = GetLayerManager();
+            layerManager?.MarkRegionDirty(RenderLayerType.Connection, clientBounds);
+
+            // 触发重绘
+            InvalidateDebounced();
+        }
+
+        /// <summary>
+        /// 计算连线的边界矩形
+        /// </summary>
+        private RectangleF CalculateConnectionBounds(Connections.FlowConnection connection)
+        {
+            if (connection.SourceNode == null || connection.TargetNode == null)
+                return RectangleF.Empty;
+
+            var sourceBounds = connection.SourceNode.GetBounds();
+            var targetBounds = connection.TargetNode.GetBounds();
+
+            // 计算包含源和目标的矩形
+            float minX = Math.Min(sourceBounds.Left, targetBounds.Left);
+            float minY = Math.Min(sourceBounds.Top, targetBounds.Top);
+            float maxX = Math.Max(sourceBounds.Right, targetBounds.Right);
+            float maxY = Math.Max(sourceBounds.Bottom, targetBounds.Bottom);
+
+            return new RectangleF(minX, minY, maxX - minX, maxY - minY);
+        }
+
+        /// <summary>
+        /// 获取LayerManager实例（通过反射访问private字段）
+        /// </summary>
+        private RenderLayerManager GetLayerManager()
+        {
+            if (_layeredRenderer == null)
+                return null;
+
+            var field = typeof(LayeredRenderer).GetField("_layerManager", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            
+            return field?.GetValue(_layeredRenderer) as RenderLayerManager;
+        }
+
+        /// <summary>
+        /// 2.3.5 获取渲染性能统计（用于性能监控）
+        /// </summary>
+        public RenderPerformanceStats GetRenderPerformanceStats()
+        {
+            var layerManager = GetLayerManager();
+            if (layerManager == null)
+                return null;
+
+            return new RenderPerformanceStats
+            {
+                DirtyLayerCount = layerManager.GetDirtyLayerCount(),
+                NodeLayerDirtyRegions = layerManager.GetDirtyRegionCount(RenderLayerType.Node),
+                ConnectionLayerDirtyRegions = layerManager.GetDirtyRegionCount(RenderLayerType.Connection),
+                CurrentFPS = PerformanceMonitor.Instance.GetCurrentFPS(),
+                AverageFPS = PerformanceMonitor.Instance.GetAverageFPS(),
+                IsPerformanceGood = PerformanceMonitor.Instance.IsPerformanceGood()
+            };
+        }
+
+        /// <summary>
+        /// 渲染性能统计（2.3.5 性能监控指标）
+        /// </summary>
+        public class RenderPerformanceStats
+        {
+            public int DirtyLayerCount { get; set; }
+            public int NodeLayerDirtyRegions { get; set; }
+            public int ConnectionLayerDirtyRegions { get; set; }
+            public float CurrentFPS { get; set; }
+            public float AverageFPS { get; set; }
+            public bool IsPerformanceGood { get; set; }
         }
 
         #endregion

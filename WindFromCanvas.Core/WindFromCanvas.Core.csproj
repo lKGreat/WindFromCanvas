@@ -170,6 +170,7 @@
     <Compile Include="Applications\FlowDesigner\DragDrop\CollisionDetector.cs" />
     <Compile Include="Applications\FlowDesigner\DragDrop\DragDropManager.cs" />
     <Compile Include="Applications\FlowDesigner\DragDrop\DropTarget.cs" />
+    <Compile Include="Applications\FlowDesigner\DragDrop\DragOverlay.cs" />
     <!-- Interaction -->
     <Compile Include="Applications\FlowDesigner\Interaction\SelectionManager.cs" />
     <Compile Include="Applications\FlowDesigner\Interaction\ContextMenuManager.cs" />
