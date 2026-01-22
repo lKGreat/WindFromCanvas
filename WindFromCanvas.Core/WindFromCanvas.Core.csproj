@@ -89,6 +89,7 @@
     <Compile Include="Applications\FlowDesigner\Widgets\NoteToolbar.cs" />
     <Compile Include="Applications\FlowDesigner\Connections\FlowConnection.cs" />
     <Compile Include="Applications\FlowDesigner\FlowDesignerCanvas.cs" />
+    <Compile Include="Applications\FlowDesigner\FlowDesignerControl.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\ToolboxPanel.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\NodePropertiesPanel.cs" />
     <Compile Include="Applications\FlowDesigner\Widgets\FlowContextMenu.cs" />

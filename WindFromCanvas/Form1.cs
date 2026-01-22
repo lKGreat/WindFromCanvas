@@ -51,6 +51,7 @@ namespace WindFromCanvas
             SetupDemo();
             SetupFlowDesigner();
             SetupNewFlowDesigner(); // 添加新的流程设计器示例
+            SetupCompleteDesignerDemo(); // 设置完整设计器演示
         }
 
         private void SetupMenu()
@@ -98,6 +99,10 @@ namespace WindFromCanvas
             demoMenu.DropDownItems.Add("LogicFlow架构演示", null, (s, e) => ShowLogicFlowDemo());
             demoMenu.DropDownItems.Add("演示所有节点类型", null, (s, e) => ShowAllNodeTypesDemo());
             demoMenu.DropDownItems.Add("演示BPMN节点", null, (s, e) => ShowBpmnNodesDemo());
+            demoMenu.DropDownItems.Add(new ToolStripSeparator());
+            demoMenu.DropDownItems.Add("完整设计器-连接节点", null, (s, e) => DemoConnectNodes());
+            demoMenu.DropDownItems.Add("完整设计器-删除节点", null, (s, e) => DemoDeleteNode());
+            demoMenu.DropDownItems.Add("完整设计器-删除连接", null, (s, e) => DemoDeleteConnection());
             
             _menuStrip.Items.AddRange(new[] { fileMenu, viewMenu, toolsMenu, demoMenu, helpMenu });
             this.MainMenuStrip = _menuStrip;
@@ -1588,6 +1593,140 @@ run.StepOutputs[""step1""] = new StepOutput
             // 停止动画
             canvas1.StopAnimation();
             base.OnFormClosed(e);
+        }
+
+        /// <summary>
+        /// 设置完整设计器演示
+        /// </summary>
+        private void SetupCompleteDesignerDemo()
+        {
+            // 检查控件是否已创建
+            if (flowDesignerControl1 == null) return;
+
+            // 添加演示数据
+            CreateCompleteDesignerDemoData();
+
+            // 监听Tab切换事件，当切换到完整设计器时显示提示
+            tabControl1.SelectedIndexChanged += (s, e) =>
+            {
+                if (tabControl1.SelectedTab == tabPageCompleteDesigner)
+                {
+                    ToastNotification.Show("欢迎使用完整流程设计器!\n\n功能:\n- 左侧工具箱可拖拽节点\n- 右侧显示属性面板\n- 工具栏提供常用操作", ToastType.Info, this);
+                }
+            };
+        }
+
+        /// <summary>
+        /// 创建完整设计器演示数据
+        /// </summary>
+        private void CreateCompleteDesignerDemoData()
+        {
+            if (flowDesignerControl1?.Canvas == null) return;
+
+            // 创建开始节点
+            var startNode = new StartNode(new FlowNodeData
+            {
+                Name = "start",
+                DisplayName = "开始",
+                Type = FlowNodeType.Start,
+                Position = new PointF(100, 200),
+                Status = NodeStatus.Success
+            });
+            flowDesignerControl1.AddNode(startNode);
+
+            // 创建处理节点
+            var processNode = new ProcessNode(new FlowNodeData
+            {
+                Name = "process1",
+                DisplayName = "数据处理",
+                Type = FlowNodeType.Process,
+                Position = new PointF(350, 200),
+                Description = "执行数据处理操作"
+            });
+            flowDesignerControl1.AddNode(processNode);
+
+            // 创建判断节点
+            var decisionNode = new DecisionNode(new FlowNodeData
+            {
+                Name = "decision1",
+                DisplayName = "条件判断",
+                Type = FlowNodeType.Decision,
+                Position = new PointF(600, 200),
+                Description = "判断处理结果"
+            });
+            flowDesignerControl1.AddNode(decisionNode);
+
+            // 创建结束节点
+            var endNode = new EndNode(new FlowNodeData
+            {
+                Name = "end",
+                DisplayName = "结束",
+                Type = FlowNodeType.End,
+                Position = new PointF(850, 200)
+            });
+            flowDesignerControl1.AddNode(endNode);
+
+            // 创建连接
+            flowDesignerControl1.CreateConnection(startNode, processNode);
+            flowDesignerControl1.CreateConnection(processNode, decisionNode);
+            flowDesignerControl1.CreateConnection(decisionNode, endNode);
+        }
+
+        /// <summary>
+        /// 演示节点连接功能
+        /// </summary>
+        public void DemoConnectNodes()
+        {
+            if (flowDesignerControl1?.Canvas == null) return;
+
+            var nodes = flowDesignerControl1.Nodes;
+            if (nodes == null || nodes.Count < 2) return;
+
+            var nodeList = new System.Collections.Generic.List<FlowNode>(nodes);
+            if (nodeList.Count >= 2)
+            {
+                var connection = flowDesignerControl1.CreateConnection(nodeList[0], nodeList[1]);
+                if (connection != null)
+                {
+                    ToastNotification.Show("已创建连接", ToastType.Success, this);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 演示删除节点功能
+        /// </summary>
+        public void DemoDeleteNode()
+        {
+            if (flowDesignerControl1 == null) return;
+
+            if (flowDesignerControl1.SelectedNode != null)
+            {
+                flowDesignerControl1.DeleteSelectedNodes();
+                ToastNotification.Show("已删除选中节点", ToastType.Success, this);
+            }
+            else
+            {
+                ToastNotification.Show("请先选中一个节点", ToastType.Warning, this);
+            }
+        }
+
+        /// <summary>
+        /// 演示取消连接功能
+        /// </summary>
+        public void DemoDeleteConnection()
+        {
+            if (flowDesignerControl1 == null) return;
+
+            if (flowDesignerControl1.SelectedConnection != null)
+            {
+                flowDesignerControl1.DeleteSelectedConnections();
+                ToastNotification.Show("已删除选中连接", ToastType.Success, this);
+            }
+            else
+            {
+                ToastNotification.Show("请先选中一个连接", ToastType.Warning, this);
+            }
         }
     }
 }

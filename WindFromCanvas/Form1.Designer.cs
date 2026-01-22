@@ -22,15 +22,19 @@ namespace WindFromCanvas
             this.flowDesignerCanvas1 = new WindFromCanvas.Core.Applications.FlowDesigner.FlowDesignerCanvas();
             this.toolboxPanel1 = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.ToolboxPanel();
             this.propertiesPanel1 = new WindFromCanvas.Core.Applications.FlowDesigner.Widgets.NodePropertiesPanel();
+            this.tabPageCompleteDesigner = new System.Windows.Forms.TabPage();
+            this.flowDesignerControl1 = new WindFromCanvas.Core.Applications.FlowDesigner.FlowDesignerControl();
             this.tabControl1.SuspendLayout();
             this.tabPageCanvas.SuspendLayout();
             this.tabPageFlowDesigner.SuspendLayout();
+            this.tabPageCompleteDesigner.SuspendLayout();
             this.SuspendLayout();
             // 
             // tabControl1
             // 
             this.tabControl1.Controls.Add(this.tabPageCanvas);
             this.tabControl1.Controls.Add(this.tabPageFlowDesigner);
+            this.tabControl1.Controls.Add(this.tabPageCompleteDesigner);
             this.tabControl1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tabControl1.Location = new System.Drawing.Point(0, 0);
             this.tabControl1.Name = "tabControl1";
@@ -99,6 +103,25 @@ namespace WindFromCanvas
             this.propertiesPanel1.Size = new System.Drawing.Size(133, 668);
             this.propertiesPanel1.TabIndex = 2;
             // 
+            // tabPageCompleteDesigner
+            // 
+            this.tabPageCompleteDesigner.Controls.Add(this.flowDesignerControl1);
+            this.tabPageCompleteDesigner.Location = new System.Drawing.Point(4, 22);
+            this.tabPageCompleteDesigner.Name = "tabPageCompleteDesigner";
+            this.tabPageCompleteDesigner.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageCompleteDesigner.Size = new System.Drawing.Size(1192, 674);
+            this.tabPageCompleteDesigner.TabIndex = 2;
+            this.tabPageCompleteDesigner.Text = "完整设计器";
+            this.tabPageCompleteDesigner.UseVisualStyleBackColor = true;
+            // 
+            // flowDesignerControl1
+            // 
+            this.flowDesignerControl1.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.flowDesignerControl1.Location = new System.Drawing.Point(3, 3);
+            this.flowDesignerControl1.Name = "flowDesignerControl1";
+            this.flowDesignerControl1.Size = new System.Drawing.Size(1186, 668);
+            this.flowDesignerControl1.TabIndex = 0;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
@@ -110,6 +133,7 @@ namespace WindFromCanvas
             this.tabControl1.ResumeLayout(false);
             this.tabPageCanvas.ResumeLayout(false);
             this.tabPageFlowDesigner.ResumeLayout(false);
+            this.tabPageCompleteDesigner.ResumeLayout(false);
             this.ResumeLayout(false);
         }
 
@@ -120,5 +144,7 @@ namespace WindFromCanvas
         private WindFromCanvas.Core.Applications.FlowDesigner.FlowDesignerCanvas flowDesignerCanvas1;
         private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.ToolboxPanel toolboxPanel1;
         private WindFromCanvas.Core.Applications.FlowDesigner.Widgets.NodePropertiesPanel propertiesPanel1;
+        private System.Windows.Forms.TabPage tabPageCompleteDesigner;
+        private WindFromCanvas.Core.Applications.FlowDesigner.FlowDesignerControl flowDesignerControl1;
     }
 }
