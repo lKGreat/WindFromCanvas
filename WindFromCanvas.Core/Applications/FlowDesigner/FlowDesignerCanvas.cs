@@ -2217,7 +2217,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         /// </summary>
         public ValidationResult ValidateFlow()
         {
-            LastValidationResult = FlowValidator.ValidateFlow(Document, _nodes, _connections.Values.ToList());
+            LastValidationResult = FlowValidator.Instance.ValidateFlow(Document, _nodes, _connections.Values.ToList());
             
             // 更新节点的验证状态
             foreach (var node in _nodes.Values)
@@ -2247,7 +2247,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
         {
             if (node?.Data == null) return;
 
-            var result = FlowValidator.ValidateNode(node.Data);
+            var result = FlowValidator.Instance.ValidateNode(node.Data);
             node.ValidationError = result.Errors.Count > 0
                 ? string.Join(", ", result.Errors.Select(e => e.Message))
                 : null;
@@ -2274,7 +2274,7 @@ namespace WindFromCanvas.Core.Applications.FlowDesigner
                 targetNode.Data.Name
             );
             var nodeDict = Document.Nodes.ToDictionary(n => n.Name);
-            if (FlowValidator.HasCircularConnection(connectionData, nodeDict, Document.Connections))
+            if (FlowValidator.Instance.HasCircularConnection(connectionData, nodeDict, Document.Connections))
             {
                 return false;
             }

@@ -210,6 +210,7 @@
     <Compile Include="Applications\FlowDesigner\Plugins\PluginContext.cs" />
     <Compile Include="Applications\FlowDesigner\Plugins\BpmnPlugin\BpmnPlugin.cs" />
     <Compile Include="Applications\FlowDesigner\Plugins\BpmnPlugin\BpmnAdapter.cs" />
+    <Compile Include="Applications\FlowDesigner\Plugins\BpmnPlugin\BpmnNodes.cs" />
     <Compile Include="Applications\FlowDesigner\Plugins\DynamicGroup\GroupNode.cs" />
     <Compile Include="Applications\FlowDesigner\Plugins\DynamicGroup\DynamicGroupPlugin.cs" />
     <!-- Adapters -->
